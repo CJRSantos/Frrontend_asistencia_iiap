@@ -14,4 +14,12 @@ class CourseService {
   static Future<dynamic> createCourse(Map<String, dynamic> data) async {
     return await ApiService.post(ApiConfig.courses, body: data, requiresAuth: true);
   }
+
+  static Future<dynamic> updateCourse(String id, Map<String, dynamic> data) async {
+    return await ApiService.patch(ApiConfig.courseById(id), body: data, requiresAuth: true);
+  }
+
+  static Future<dynamic> deleteCourse(String id) async {
+    return await ApiService.delete(ApiConfig.courseById(id), requiresAuth: true);
+  }
 }

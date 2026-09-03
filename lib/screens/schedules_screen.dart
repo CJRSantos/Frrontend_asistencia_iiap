@@ -124,15 +124,108 @@ class _SchedulesScreenState extends State<SchedulesScreen> {
     if (created == true) _loadData();
   }
 
+  Future<void> _editSchedule(ScheduleModel item) async {
+    int selectedDay = item.dayOfWeek;
+    final startTimeCtrl = TextEditingController(text: item.startTime);
+    final endTimeCtrl = TextEditingController(text: item.endTime);
+
+    final updated = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Editar Horario de Trabajo'),
+        content: StatefulBuilder(
+          builder: (context, setDialogState) {
+            return SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  DropdownButtonFormField<int>(
+                    initialValue: selectedDay,
+                    decoration: const InputDecoration(labelText: 'Día de la Semana'),
+                    items: const [
+                      DropdownMenuItem(value: 1, child: Text('Lunes')),
+                      DropdownMenuItem(value: 2, child: Text('Martes')),
+                      DropdownMenuItem(value: 3, child: Text('Miércoles')),
+                      DropdownMenuItem(value: 4, child: Text('Jueves')),
+                      DropdownMenuItem(value: 5, child: Text('Viernes')),
+                      DropdownMenuItem(value: 6, child: Text('Sábado')),
+                      DropdownMenuItem(value: 0, child: Text('Domingo')),
+                    ],
+                    onChanged: (val) => setDialogState(() => selectedDay = val!),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: startTimeCtrl,
+                    decoration: const InputDecoration(labelText: 'Hora Inicio (HH:mm)'),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: endTimeCtrl,
+                    decoration: const InputDecoration(labelText: 'Hora Fin (HH:mm)'),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          ElevatedButton(
+            onPressed: () async {
+              try {
+                await ScheduleService.updateSchedule(
+                  item.id,
+                  {
+                    'day_of_week': selectedDay,
+                    'start_time': startTimeCtrl.text.trim(),
+                    'end_time': endTimeCtrl.text.trim(),
+                  },
+                );
+                if (ctx.mounted) Navigator.pop(ctx, true);
+              } catch (e) {
+                if (ctx.mounted) {
+                  ScaffoldMessenger.of(ctx).showSnackBar(
+                    SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+                  );
+                }
+              }
+            },
+            child: const Text('Actualizar'),
+          ),
+        ],
+      ),
+    );
+
+    if (updated == true) _loadData();
+  }
+
   Future<void> _deleteSchedule(String id) async {
-    try {
-      await ScheduleService.deleteSchedule(id);
-      _loadData();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al eliminar: $e'), backgroundColor: Colors.red),
-        );
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Eliminar Horario'),
+        content: const Text('¿Estás seguro de eliminar este horario?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Eliminar', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      try {
+        await ScheduleService.deleteSchedule(id);
+        _loadData();
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error al eliminar: $e'), backgroundColor: Colors.red),
+          );
+        }
       }
     }
   }
@@ -162,11 +255,20 @@ class _SchedulesScreenState extends State<SchedulesScreen> {
                     return Card(
                       child: ListTile(
                         leading: const Icon(Icons.access_time_filled, color: Color(0xFF2D5E2A)),
-                        title: Text('${item.dayName}: ${item.startTime} - ${item.endTime}'),
+                        title: Text('${item.dayName}: ${item.startTime} - ${item.endTime}', style: const TextStyle(fontWeight: FontWeight.bold)),
                         subtitle: Text(item.user?.fullName ?? 'Usuario ID: ${item.userId}'),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.delete_outline, color: Colors.red),
-                          onPressed: () => _deleteSchedule(item.id),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.edit_outlined, color: Colors.blue),
+                              onPressed: () => _editSchedule(item),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline, color: Colors.red),
+                              onPressed: () => _deleteSchedule(item.id),
+                            ),
+                          ],
                         ),
                       ),
                     );

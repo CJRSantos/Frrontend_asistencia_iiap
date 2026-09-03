@@ -92,6 +92,67 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     }
   }
 
+  Future<void> _editUser(UserModel user) async {
+    final nameCtrl = TextEditingController(text: user.fullName);
+    final docCtrl = TextEditingController(text: user.documentNumber ?? '');
+    final phoneCtrl = TextEditingController(text: user.phoneNumber ?? '');
+    final posCtrl = TextEditingController(text: user.position ?? '');
+    final deptCtrl = TextEditingController(text: user.department ?? '');
+
+    final updated = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Editar Usuario: ${user.fullName}'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Nombre Completo *')),
+              const SizedBox(height: 8),
+              TextField(controller: docCtrl, decoration: const InputDecoration(labelText: 'Número de Documento (DNI/CE)')),
+              const SizedBox(height: 8),
+              TextField(controller: phoneCtrl, decoration: const InputDecoration(labelText: 'Teléfono / Celular')),
+              const SizedBox(height: 8),
+              TextField(controller: posCtrl, decoration: const InputDecoration(labelText: 'Cargo / Puesto')),
+              const SizedBox(height: 8),
+              TextField(controller: deptCtrl, decoration: const InputDecoration(labelText: 'Departamento / Área')),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          ElevatedButton(
+            onPressed: () async {
+              if (nameCtrl.text.trim().isNotEmpty) {
+                try {
+                  final data = <String, dynamic>{
+                    'full_name': nameCtrl.text.trim(),
+                  };
+                  if (docCtrl.text.trim().isNotEmpty) data['document_number'] = docCtrl.text.trim();
+                  if (phoneCtrl.text.trim().isNotEmpty) data['phone_number'] = phoneCtrl.text.trim();
+                  if (posCtrl.text.trim().isNotEmpty) data['position'] = posCtrl.text.trim();
+                  if (deptCtrl.text.trim().isNotEmpty) data['department'] = deptCtrl.text.trim();
+
+                  await UserService.updateUser(user.id, data);
+                  if (ctx.mounted) Navigator.pop(ctx, true);
+                } catch (e) {
+                  if (ctx.mounted) {
+                    ScaffoldMessenger.of(ctx).showSnackBar(
+                      SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+                    );
+                  }
+                }
+              }
+            },
+            child: const Text('Actualizar'),
+          ),
+        ],
+      ),
+    );
+
+    if (updated == true) _loadUsers();
+  }
+
   Future<void> _deleteUser(UserModel user) async {
     final confirm = await showDialog<bool>(
       context: context,
@@ -163,10 +224,12 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                         ),
                         trailing: PopupMenuButton<String>(
                           onSelected: (val) {
+                            if (val == 'edit') _editUser(user);
                             if (val == 'role') _changeRole(user);
                             if (val == 'delete') _deleteUser(user);
                           },
                           itemBuilder: (context) => [
+                            const PopupMenuItem(value: 'edit', child: Text('Editar Datos')),
                             const PopupMenuItem(value: 'role', child: Text('Cambiar Rol')),
                             const PopupMenuItem(value: 'delete', child: Text('Eliminar', style: TextStyle(color: Colors.red))),
                           ],

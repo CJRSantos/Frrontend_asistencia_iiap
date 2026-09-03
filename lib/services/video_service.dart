@@ -14,4 +14,12 @@ class VideoService {
   static Future<dynamic> createVideo(Map<String, dynamic> data) async {
     return await ApiService.post(ApiConfig.videos, body: data, requiresAuth: true);
   }
+
+  static Future<dynamic> updateVideo(String id, Map<String, dynamic> data) async {
+    return await ApiService.patch(ApiConfig.videoById(id), body: data, requiresAuth: true);
+  }
+
+  static Future<dynamic> deleteVideo(String id) async {
+    return await ApiService.delete(ApiConfig.videoById(id), requiresAuth: true);
+  }
 }

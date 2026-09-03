@@ -18,10 +18,14 @@ class ApiConfig {
   static const String users = '$baseUrl/users';
   static String userById(String id) => '$baseUrl/users/$id';
   static String userRole(String id) => '$baseUrl/users/$id/role';
+  static const String userPhotoUpload = '$baseUrl/users/me/photo';
+  static const String userPhotoUploadBase64 = '$baseUrl/users/me/photo-base64';
 
   // Attendance endpoints
   static const String attendanceMark = '$baseUrl/attendance/mark';
+  static const String attendanceTodayStatus = '$baseUrl/attendance/today-status';
   static const String attendanceMyHistory = '$baseUrl/attendance/my-history';
+  static const String attendanceClearMyHistory = '$baseUrl/attendance/clear-my-history';
   static const String attendanceHistory = '$baseUrl/attendance/history';
 
   // Historial (Audit Trail)
@@ -60,9 +64,11 @@ class ApiConfig {
 
   // Courses endpoints
   static const String courses = '$baseUrl/courses';
+  static String courseById(String id) => '$baseUrl/courses/$id';
 
   // Videos endpoints
   static const String videos = '$baseUrl/videos';
+  static String videoById(String id) => '$baseUrl/videos/$id';
 
   // Reports endpoints
   static const String reportsNotifications = '$baseUrl/reports/notifications';
@@ -70,4 +76,9 @@ class ApiConfig {
 
   // Settings endpoints
   static const String settings = '$baseUrl/settings';
+  static const String settingsNotifications = '$baseUrl/settings/notifications';
+  static const String settingsClearCache = '$baseUrl/settings/clear-cache';
+  static const String settingsChangePassword = '$baseUrl/settings/change-password';
+  static const String settingsVerifyPassword = '$baseUrl/settings/verify-password';
+  static const String settingsDeleteAccount = '$baseUrl/settings/account';
 }

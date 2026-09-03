@@ -8,12 +8,15 @@ class ProjectService {
     required String name,
     String? description,
   }) async {
+    final body = <String, dynamic>{
+      'name': name,
+    };
+    if (description != null && description.isNotEmpty) {
+      body['description'] = description;
+    }
     final response = await ApiService.post(
       ApiConfig.projects,
-      body: {
-        'name': name,
-        'description': ?description,
-      },
+      body: body,
       requiresAuth: true,
     );
     return ProjectModel.fromJson(response as Map<String, dynamic>);

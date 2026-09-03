@@ -2,6 +2,8 @@ class CourseModel {
   final String id;
   final String title;
   final String? description;
+  final String? link;
+  final String? timeLimit;
   final String? category;
   final String? createdAt;
 
@@ -9,6 +11,8 @@ class CourseModel {
     required this.id,
     required this.title,
     this.description,
+    this.link,
+    this.timeLimit,
     this.category,
     this.createdAt,
   });
@@ -18,6 +22,8 @@ class CourseModel {
       id: json['id'] ?? '',
       title: json['title'] ?? json['name'] ?? '',
       description: json['description'],
+      link: json['link'] ?? json['url'],
+      timeLimit: json['time_limit'] ?? json['timeLimit'],
       category: json['category'],
       createdAt: json['created_at'],
     );
@@ -28,6 +34,8 @@ class CourseModel {
       'id': id,
       'title': title,
       'description': description,
+      'link': link,
+      'time_limit': timeLimit,
       'category': category,
       'created_at': createdAt,
     };

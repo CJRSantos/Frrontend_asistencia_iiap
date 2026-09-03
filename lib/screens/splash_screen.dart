@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../services/api_service.dart';
 import '../services/auth_service.dart';
 import '../services/storage_service.dart';
 import '../widgets/leaf_logo.dart';
@@ -42,12 +43,18 @@ class _SplashScreenState extends State<SplashScreen> {
           Widget destination = const LoginScreen();
           final token = await StorageService.getToken();
           if (token != null && token.isNotEmpty) {
+            // Si ya hay sesión previa guardada, ingresa directo al Home (funciona con o sin backend activo)
+            destination = const HomeScreen();
             try {
+              // Si el servidor está activo, sincroniza el perfil actualizado en segundo plano
               await AuthService.getProfile();
-              destination = const HomeScreen();
-            } catch (_) {
-              // Token expired or invalid, keep destination as LoginScreen
-              await StorageService.clearSession();
+            } catch (e) {
+              // Solo se cierra sesión si el backend responde con HTTP 401 Unauthorized (token revocado o expirado)
+              if (e is ApiException && e.statusCode == 401) {
+                await StorageService.clearSession();
+                destination = const LoginScreen();
+              }
+              // Si el backend está inactivo o no hay internet, se conserva la sesión activa
             }
           }
 

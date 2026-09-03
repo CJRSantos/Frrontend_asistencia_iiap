@@ -44,6 +44,12 @@ class ScheduleService {
     return [];
   }
 
+  // Get schedule by ID
+  static Future<ScheduleModel> getScheduleById(String id) async {
+    final response = await ApiService.get(ApiConfig.scheduleById(id), requiresAuth: true);
+    return ScheduleModel.fromJson(response as Map<String, dynamic>);
+  }
+
   // Update schedule
   static Future<dynamic> updateSchedule(String id, Map<String, dynamic> data) async {
     return await ApiService.patch(

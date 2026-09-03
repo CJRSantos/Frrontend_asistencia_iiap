@@ -14,6 +14,10 @@ class UserModel {
   final String? createdAt;
   final String? updatedAt;
 
+  bool get canManageResources => role == 'ADMIN' || role == 'SUPERADMIN';
+  bool get isAdmin => role == 'ADMIN';
+  bool get isSuperAdmin => role == 'SUPERADMIN';
+
   UserModel({
     required this.id,
     required this.email,
@@ -67,5 +71,39 @@ class UserModel {
       'created_at': createdAt,
       'updated_at': updatedAt,
     };
+  }
+
+  UserModel copyWith({
+    String? id,
+    String? email,
+    String? fullName,
+    String? documentNumber,
+    String? phoneNumber,
+    String? dateOfBirth,
+    String? photoUrl,
+    String? position,
+    String? department,
+    String? role,
+    bool? isVerified,
+    bool? isActive,
+    String? createdAt,
+    String? updatedAt,
+  }) {
+    return UserModel(
+      id: id ?? this.id,
+      email: email ?? this.email,
+      fullName: fullName ?? this.fullName,
+      documentNumber: documentNumber ?? this.documentNumber,
+      phoneNumber: phoneNumber ?? this.phoneNumber,
+      dateOfBirth: dateOfBirth ?? this.dateOfBirth,
+      photoUrl: photoUrl ?? this.photoUrl,
+      position: position ?? this.position,
+      department: department ?? this.department,
+      role: role ?? this.role,
+      isVerified: isVerified ?? this.isVerified,
+      isActive: isActive ?? this.isActive,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
   }
 }

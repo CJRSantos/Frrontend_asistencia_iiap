@@ -12,7 +12,7 @@ class DelegationService {
     final response = await ApiService.post(
       ApiConfig.delegations,
       body: {
-        'delegate_id': delegateId,
+        'delegatee_id': delegateId,
         'start_date': startDate,
         'end_date': endDate,
       },

@@ -19,6 +19,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
   
   String? _selectedRole;
   bool _isLoading = false;
+  bool _obscurePassword = true;
+  bool _obscureConfirmPassword = true;
+
 
   final List<String> _roles = [
     'Servicios varios',
@@ -285,10 +288,22 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     const SizedBox(height: 6),
                     TextFormField(
                       controller: _passwordController,
-                      obscureText: true,
+                      obscureText: _obscurePassword,
                       decoration: _buildInputDecoration(
                         hintText: 'Mínimo 6 caracteres',
                         prefixIcon: Icons.lock_outline,
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            _obscurePassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                            color: const Color(0xFF8E9A90),
+                            size: 22,
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              _obscurePassword = !_obscurePassword;
+                            });
+                          },
+                        ),
                       ),
                       validator: (v) {
                         if (v == null || v.isEmpty) {
@@ -314,10 +329,22 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     const SizedBox(height: 6),
                     TextFormField(
                       controller: _confirmPasswordController,
-                      obscureText: true,
+                      obscureText: _obscureConfirmPassword,
                       decoration: _buildInputDecoration(
                         hintText: 'Repite tu contraseña',
                         prefixIcon: Icons.lock_clock_outlined,
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            _obscureConfirmPassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                            color: const Color(0xFF8E9A90),
+                            size: 22,
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              _obscureConfirmPassword = !_obscureConfirmPassword;
+                            });
+                          },
+                        ),
                       ),
                       validator: (v) {
                         if (v == null || v.isEmpty) {
@@ -416,11 +443,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
   InputDecoration _buildInputDecoration({
     required String hintText,
     required IconData prefixIcon,
+    Widget? suffixIcon,
   }) {
     return InputDecoration(
       hintText: hintText,
       hintStyle: const TextStyle(color: Color(0xFF8E9A90), fontSize: 14.5),
       prefixIcon: Icon(prefixIcon, color: const Color(0xFF8E9A90), size: 20),
+      suffixIcon: suffixIcon,
       filled: true,
       fillColor: const Color(0xFFF0F2F1),
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
