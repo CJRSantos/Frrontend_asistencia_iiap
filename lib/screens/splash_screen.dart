@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
 import '../services/storage_service.dart';
+import '../services/biometric_service.dart';
 import '../widgets/leaf_logo.dart';
 import 'home_screen.dart';
 import 'login_screen.dart';
@@ -43,18 +44,27 @@ class _SplashScreenState extends State<SplashScreen> {
           Widget destination = const LoginScreen();
           final token = await StorageService.getToken();
           if (token != null && token.isNotEmpty) {
-            // Si ya hay sesión previa guardada, ingresa directo al Home (funciona con o sin backend activo)
-            destination = const HomeScreen();
-            try {
-              // Si el servidor está activo, sincroniza el perfil actualizado en segundo plano
-              await AuthService.getProfile();
-            } catch (e) {
-              // Solo se cierra sesión si el backend responde con HTTP 401 Unauthorized (token revocado o expirado)
-              if (e is ApiException && e.statusCode == 401) {
-                await StorageService.clearSession();
-                destination = const LoginScreen();
+            // Autenticación biométrica opcional al abrir la app si está configurada
+            final canBio = await BiometricService.isBiometricsAvailable();
+            bool bioOk = true;
+            if (canBio) {
+              bioOk = await BiometricService.authenticate(
+                localizedReason: 'Ingresa a Control Asistencia IIAP con tu huella dactilar',
+              );
+            }
+
+            if (bioOk) {
+              destination = const HomeScreen();
+              try {
+                await AuthService.getProfile();
+              } catch (e) {
+                if (e is ApiException && e.statusCode == 401) {
+                  await StorageService.clearSession();
+                  destination = const LoginScreen();
+                }
               }
-              // Si el backend está inactivo o no hay internet, se conserva la sesión activa
+            } else {
+              destination = const LoginScreen();
             }
           }
 

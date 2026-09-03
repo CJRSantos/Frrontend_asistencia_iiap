@@ -35,11 +35,8 @@ class BirthdayModel {
     if (dateOfBirth == null || dateOfBirth!.isEmpty) return null;
     final str = dateOfBirth!.trim();
     try {
-      return DateTime.parse(str);
-    } catch (_) {}
-
-    try {
-      final parts = str.split(RegExp(r'[-/T ]')).where((p) => p.isNotEmpty).toList();
+      final dateOnly = str.split('T')[0].split(' ')[0];
+      final parts = dateOnly.split(RegExp(r'[-/]')).where((p) => p.isNotEmpty).toList();
       if (parts.length >= 3) {
         int first = int.parse(parts[0]);
         int second = int.parse(parts[1]);
@@ -54,22 +51,50 @@ class BirthdayModel {
         return DateTime(first, second, third);
       }
     } catch (_) {}
+
+    try {
+      return DateTime.parse(str);
+    } catch (_) {}
     return null;
   }
 
-  int get month => explicitMonth ?? parsedDate?.month ?? 0;
-  int get day => explicitDay ?? parsedDate?.day ?? 0;
+  int get month {
+    if (explicitMonth != null && explicitMonth! >= 1 && explicitMonth! <= 12) {
+      return explicitMonth!;
+    }
+    return parsedDate?.month ?? 0;
+  }
+
+  int get day {
+    if (explicitDay != null && explicitDay! >= 1 && explicitDay! <= 31) {
+      return explicitDay!;
+    }
+    return parsedDate?.day ?? 0;
+  }
+
+  int? get computedDaysUntil {
+    if (daysUntil != null) return daysUntil;
+    final m = month;
+    final d = day;
+    if (m >= 1 && m <= 12 && d >= 1 && d <= 31) {
+      final now = DateTime.now();
+      final todayMidnight = DateTime(now.year, now.month, now.day);
+      var bdayThisYear = DateTime(now.year, m, d);
+      if (bdayThisYear.isBefore(todayMidnight)) {
+        bdayThisYear = DateTime(now.year + 1, m, d);
+      }
+      return bdayThisYear.difference(todayMidnight).inDays;
+    }
+    return null;
+  }
 
   bool get computedIsToday {
     if (isToday) return true;
-    final d = parsedDate;
-    if (d != null) {
+    final m = month;
+    final d = day;
+    if (m >= 1 && m <= 12 && d >= 1 && d <= 31) {
       final now = DateTime.now();
-      return d.month == now.month && d.day == now.day;
-    }
-    if (explicitMonth != null && explicitDay != null) {
-      final now = DateTime.now();
-      return explicitMonth == now.month && explicitDay == now.day;
+      return m == now.month && d == now.day;
     }
     return false;
   }
@@ -81,20 +106,14 @@ class BirthdayModel {
     if (customFormattedDate != null && customFormattedDate!.isNotEmpty) {
       return customFormattedDate!;
     }
-    final d = parsedDate;
     const months = [
       '', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
       'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
     ];
-    if (d != null && d.month >= 1 && d.month <= 12) {
-      final base = '${d.day} de ${months[d.month]}';
-      if (dayName != null && dayName!.isNotEmpty) {
-        return '$dayName, $base';
-      }
-      return base;
-    }
-    if (explicitMonth != null && explicitDay != null && explicitMonth! >= 1 && explicitMonth! <= 12) {
-      final base = '$explicitDay de ${months[explicitMonth!]}';
+    final m = month;
+    final d = day;
+    if (m >= 1 && m <= 12 && d >= 1 && d <= 31) {
+      final base = '$d de ${months[m]}';
       if (dayName != null && dayName!.isNotEmpty) {
         return '$dayName, $base';
       }
@@ -118,14 +137,30 @@ class BirthdayModel {
   factory BirthdayModel.fromJson(Map<String, dynamic> json, {int? defaultMonth, int? defaultDay}) {
     int? m;
     int? d;
-    if (json['month'] != null) {
+
+    if (json['month_number'] != null) {
+      m = int.tryParse(json['month_number'].toString());
+    } else if (json['monthNumber'] != null) {
+      m = int.tryParse(json['monthNumber'].toString());
+    } else if (json['month'] != null) {
       m = int.tryParse(json['month'].toString());
     }
-    if (json['day'] != null) {
+
+    if (json['day_number'] != null) {
+      d = int.tryParse(json['day_number'].toString());
+    } else if (json['dayNumber'] != null) {
+      d = int.tryParse(json['dayNumber'].toString());
+    } else if (json['day'] != null) {
       d = int.tryParse(json['day'].toString());
     }
+
     m ??= defaultMonth;
     d ??= defaultDay;
+
+    final num? rawDays = json['days_left'] as num? ??
+        json['daysLeft'] as num? ??
+        json['days_until'] as num? ??
+        json['daysUntil'] as num?;
 
     return BirthdayModel(
       id: json['id']?.toString() ?? json['user_id']?.toString() ?? '',
@@ -148,9 +183,7 @@ class BirthdayModel {
           json['fechaNacimiento']?.toString() ??
           json['fecha']?.toString(),
       isToday: json['is_today'] as bool? ?? json['isToday'] as bool? ?? false,
-      daysUntil: json['days_until'] is num
-          ? (json['days_until'] as num).toInt()
-          : (json['daysUntil'] is num ? (json['daysUntil'] as num).toInt() : null),
+      daysUntil: rawDays?.toInt(),
       customFormattedDate: json['formatted_date']?.toString() ?? json['formattedDate']?.toString(),
       explicitMonth: m,
       explicitDay: d,

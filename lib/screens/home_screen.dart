@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/attendance_model.dart';
 import '../models/birthday_model.dart';
@@ -11,6 +12,7 @@ import '../services/storage_service.dart';
 import '../services/theme_service.dart';
 import '../widgets/leaf_logo.dart';
 import '../services/location_service.dart';
+import '../services/biometric_service.dart';
 import '../services/notification_service.dart';
 import '../services/report_pdf_service.dart';
 import 'package:image_picker/image_picker.dart';
@@ -49,8 +51,11 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isLoadingBirthdays = false;
   String? _birthdaysError;
 
-  // Estado de sincronización Offline / Online
+  // Estado de red y sincronización Offline / Online
+  bool _isOnline = true;
   int _pendingSyncCount = 0;
+  bool _isSyncing = false;
+  Timer? _connectivityTimer;
 
   // Turnos de Trabajo: MORNING (8:30 - 13:00) | AFTERNOON (13:00 - 18:30)
   String _selectedShift = DateTime.now().hour < 13 ? 'MORNING' : 'AFTERNOON';
@@ -62,17 +67,31 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     NotificationService.init();
-    _updatePendingCount();
+    _checkConnectivity();
+    _connectivityTimer = Timer.periodic(const Duration(seconds: 15), (_) => _checkConnectivity());
     _loadInitialData();
   }
 
-  Future<void> _updatePendingCount() async {
+  @override
+  void dispose() {
+    _connectivityTimer?.cancel();
+    _birthdaySearchCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _checkConnectivity() async {
     final pending = await StorageService.getPendingAttendances();
+    final isAlive = await ApiService.checkServerHealth();
     if (mounted) {
       setState(() {
+        _isOnline = isAlive;
         _pendingSyncCount = pending.length;
       });
     }
+  }
+
+  Future<void> _updatePendingCount() async {
+    await _checkConnectivity();
   }
 
   Future<void> _loadInitialData() async {
@@ -173,15 +192,41 @@ class _HomeScreenState extends State<HomeScreen> {
       final upcomingBirthdays = await BirthdayService.getUpcomingBirthdays();
       final calendarBirthdays = await BirthdayService.getCalendarBirthdays();
       if (mounted) {
+        // Consolidar todos los cumpleaños asegurando que ningún colaborador de la BD quede fuera
+        final Map<String, BirthdayModel> allMap = {};
+        for (final b in calendarBirthdays) {
+          final key = b.id.isNotEmpty ? b.id : '${b.fullName}_${b.month}_${b.day}';
+          allMap[key] = b;
+        }
+        for (final b in upcomingBirthdays) {
+          final key = b.id.isNotEmpty ? b.id : '${b.fullName}_${b.month}_${b.day}';
+          allMap.putIfAbsent(key, () => b);
+        }
+        for (final b in todayBirthdays) {
+          final key = b.id.isNotEmpty ? b.id : '${b.fullName}_${b.month}_${b.day}';
+          allMap.putIfAbsent(key, () => b);
+        }
+
+        final combinedCalendar = allMap.values.toList();
+
+        // Determinar cumpleañeros de hoy (de endpoint /today o chequeando mes y día actual)
+        List<BirthdayModel> effectiveToday = List.from(todayBirthdays);
+        if (effectiveToday.isEmpty) {
+          final now = DateTime.now();
+          effectiveToday = combinedCalendar
+              .where((b) => b.computedIsToday || (b.month == now.month && b.day == now.day))
+              .toList();
+        }
+
         setState(() {
-          _todayBirthdays = todayBirthdays;
+          _todayBirthdays = effectiveToday;
           _upcomingBirthdays = upcomingBirthdays;
-          _calendarBirthdays = calendarBirthdays.isNotEmpty ? calendarBirthdays : upcomingBirthdays;
+          _calendarBirthdays = combinedCalendar.isNotEmpty ? combinedCalendar : upcomingBirthdays;
           _isLoadingBirthdays = false;
         });
 
-        if (todayBirthdays.isNotEmpty) {
-          NotificationService.checkAndNotifyBirthdays(todayBirthdays);
+        if (effectiveToday.isNotEmpty) {
+          NotificationService.checkAndNotifyBirthdays(effectiveToday);
         }
       }
     } catch (e) {
@@ -252,6 +297,25 @@ class _HomeScreenState extends State<HomeScreen> {
     );
 
     if (confirm != true || !mounted) return;
+
+    // Autenticación Biométrica obligatoria (Huella Dactilar / Face ID)
+    final isBiometricValid = await BiometricService.authenticate(
+      localizedReason: 'Por favor confirma tu identidad con tu huella digital para registrar tu $typeLabel',
+    );
+    if (!isBiometricValid) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Autenticación biométrica no completada o cancelada. No se registró la asistencia.'),
+            backgroundColor: Color(0xFFDC2626),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return;
+    }
+
+    if (!mounted) return;
 
     // Show progress dialog
     showDialog(
@@ -512,6 +576,205 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Widget _buildNetworkStatusBadge(bool isDark) {
+    if (_isSyncing) {
+      return Container(
+        margin: const EdgeInsets.symmetric(vertical: 11, horizontal: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1E293B) : const Color(0xFFEFF6FF),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFF3B82F6), width: 0.8),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 11,
+              height: 11,
+              child: CircularProgressIndicator(strokeWidth: 1.8, color: Color(0xFF3B82F6)),
+            ),
+            SizedBox(width: 5),
+            Text(
+              'Sincronizando...',
+              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF3B82F6)),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final isAllSynced = _isOnline && _pendingSyncCount == 0;
+
+    if (isAllSynced) {
+      return InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('🟢 En línea: Conexión activa y todas las marcaciones sincronizadas.'),
+              backgroundColor: Color(0xFF16A34A),
+              behavior: SnackBarBehavior.floating,
+              duration: Duration(seconds: 2),
+            ),
+          );
+        },
+        child: Container(
+          margin: const EdgeInsets.symmetric(vertical: 11, horizontal: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF14532D) : const Color(0xFFE8F5E9),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFF22C55E), width: 0.8),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 7,
+                height: 7,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Color(0xFF22C55E),
+                ),
+              ),
+              const SizedBox(width: 5),
+              Text(
+                'En línea (Sincronizado)',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: isDark ? const Color(0xFF86EFAC) : const Color(0xFF15803D),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Modo Offline con marcaciones pendientes o servidor desconectado
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: _handleManualSync,
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 9, horizontal: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF78350F) : const Color(0xFFFFFBEB),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFF59E0B), width: 1),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 7,
+              height: 7,
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                color: Color(0xFFF59E0B),
+              ),
+            ),
+            const SizedBox(width: 5),
+            Text(
+              _pendingSyncCount > 0
+                  ? 'Modo Offline ($_pendingSyncCount pendiente${_pendingSyncCount > 1 ? "s" : ""})'
+                  : 'Modo Offline',
+              style: TextStyle(
+                fontSize: 10.5,
+                fontWeight: FontWeight.bold,
+                color: isDark ? const Color(0xFFFDE68A) : const Color(0xFFB45309),
+              ),
+            ),
+            const SizedBox(width: 5),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF59E0B),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.sync_rounded, size: 10, color: Colors.white),
+                  SizedBox(width: 2),
+                  Text(
+                    'Sincronizar ahora',
+                    style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: Colors.white),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _handleManualSync() async {
+    setState(() {
+      _isSyncing = true;
+    });
+
+    try {
+      final isAlive = await ApiService.checkServerHealth();
+      if (!isAlive) {
+        if (mounted) {
+          setState(() {
+            _isOnline = false;
+            _isSyncing = false;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('El servidor backend no está disponible en este momento. Las marcaciones se mantienen guardadas localmente.'),
+              backgroundColor: Color(0xFFD97706),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        return;
+      }
+
+      final syncedCount = await AttendanceService.syncPendingAttendances();
+      final pending = await StorageService.getPendingAttendances();
+
+      if (mounted) {
+        setState(() {
+          _isOnline = true;
+          _pendingSyncCount = pending.length;
+          _isSyncing = false;
+        });
+
+        _fetchTodayStatus();
+        _fetchHistory();
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(syncedCount > 0
+                ? '¡Se sincronizaron $syncedCount marcación(es) exitosamente con el servidor!'
+                : 'Conexión restablecida. Todas tus marcaciones están sincronizadas.'),
+            backgroundColor: const Color(0xFF16A34A),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isSyncing = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error durante la sincronización: ${e.toString()}'),
+            backgroundColor: const Color(0xFFDC2626),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
   void _showDetailedAttendanceDialog({
     required String title,
     required String message,
@@ -723,6 +986,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
         actions: [
+          _buildNetworkStatusBadge(isDark),
           ValueListenableBuilder<ThemeMode>(
             valueListenable: ThemeService.themeModeNotifier,
             builder: (context, mode, _) {
@@ -1759,8 +2023,11 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
 
-    // Filtrado por búsqueda y mes
-    final monthsList = ['TODOS', 'ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO', 'AGOSTO', 'SETIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE'];
+    // Filtrado por búsqueda y mes (Soporta Septiembre y Setiembre indistintamente)
+    final monthsList = [
+      'TODOS', 'ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO',
+      'JULIO', 'AGOSTO', 'SEPTIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE'
+    ];
 
     final displayList = _calendarBirthdays.where((b) {
       final matchesSearch = _birthdaySearchQuery.isEmpty ||
@@ -1768,11 +2035,27 @@ class _HomeScreenState extends State<HomeScreen> {
           (b.department != null && b.department!.toLowerCase().contains(_birthdaySearchQuery.toLowerCase())) ||
           (b.position != null && b.position!.toLowerCase().contains(_birthdaySearchQuery.toLowerCase()));
 
-      final matchesMonth = _selectedBirthdayMonth == 'TODOS' ||
-          b.monthName.toUpperCase() == _selectedBirthdayMonth.toUpperCase();
+      bool matchesMonth = _selectedBirthdayMonth == 'TODOS';
+      if (!matchesMonth) {
+        final normSelected = _selectedBirthdayMonth.toUpperCase().replaceAll('SETIEMBRE', 'SEPTIEMBRE');
+        final monthIdx = monthsList.indexOf(normSelected);
+        if (monthIdx > 0) {
+          matchesMonth = b.month == monthIdx;
+        } else {
+          final bMonthNorm = b.monthName.toUpperCase().replaceAll('SETIEMBRE', 'SEPTIEMBRE');
+          matchesMonth = bMonthNorm == normSelected;
+        }
+      }
 
       return matchesSearch && matchesMonth;
     }).toList();
+
+    // Ordenamiento cronológico anual por mes y por día
+    displayList.sort((a, b) {
+      final cmpMonth = a.month.compareTo(b.month);
+      if (cmpMonth != 0) return cmpMonth;
+      return a.day.compareTo(b.day);
+    });
 
     return RefreshIndicator(
       onRefresh: _fetchBirthdays,
@@ -1821,11 +2104,16 @@ class _HomeScreenState extends State<HomeScreen> {
                           children: [
                             CircleAvatar(
                               backgroundColor: const Color(0xFFF59E0B),
+                              backgroundImage: item.photoUrl != null && item.photoUrl!.isNotEmpty
+                                  ? NetworkImage(item.photoUrl!)
+                                  : null,
                               radius: 16,
-                              child: Text(
-                                item.fullName.isNotEmpty ? item.fullName[0].toUpperCase() : 'C',
-                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
-                              ),
+                              child: (item.photoUrl == null || item.photoUrl!.isEmpty)
+                                  ? Text(
+                                      item.fullName.isNotEmpty ? item.fullName[0].toUpperCase() : 'C',
+                                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                                    )
+                                  : null,
                             ),
                             const SizedBox(width: 10),
                             Expanded(
@@ -1877,13 +2165,14 @@ class _HomeScreenState extends State<HomeScreen> {
                 separatorBuilder: (ctx, i) => const SizedBox(width: 12),
                 itemBuilder: (ctx, index) {
                   final up = _upcomingBirthdays[index];
-                  final daysText = up.daysUntil != null
-                      ? (up.daysUntil == 0
+                  final daysUntil = up.daysUntil ?? up.computedDaysUntil;
+                  final daysText = daysUntil != null
+                      ? (daysUntil == 0
                           ? '¡Hoy!'
-                          : up.daysUntil == 1
+                          : daysUntil == 1
                               ? 'Mañana'
-                              : 'Faltan ${up.daysUntil} días')
-                      : up.formattedDayAndMonth;
+                              : 'Faltan $daysUntil días')
+                      : (up.computedIsToday ? '¡Hoy!' : up.formattedDayAndMonth);
 
                   return Container(
                     width: 250,
@@ -1908,11 +2197,16 @@ class _HomeScreenState extends State<HomeScreen> {
                           children: [
                             CircleAvatar(
                               backgroundColor: isDark ? const Color(0xFF166534) : const Color(0xFFC7F3BF),
+                              backgroundImage: up.photoUrl != null && up.photoUrl!.isNotEmpty
+                                  ? NetworkImage(up.photoUrl!)
+                                  : null,
                               radius: 18,
-                              child: Text(
-                                up.fullName.isNotEmpty ? up.fullName[0].toUpperCase() : 'C',
-                                style: TextStyle(color: isDark ? Colors.white : const Color(0xFF1E4720), fontWeight: FontWeight.bold),
-                              ),
+                              child: (up.photoUrl == null || up.photoUrl!.isEmpty)
+                                  ? Text(
+                                      up.fullName.isNotEmpty ? up.fullName[0].toUpperCase() : 'C',
+                                      style: TextStyle(color: isDark ? Colors.white : const Color(0xFF1E4720), fontWeight: FontWeight.bold),
+                                    )
+                                  : null,
                             ),
                             const SizedBox(width: 10),
                             Expanded(
@@ -2104,15 +2398,20 @@ class _HomeScreenState extends State<HomeScreen> {
                   children: [
                     CircleAvatar(
                       backgroundColor: isDark ? const Color(0xFF166534) : const Color(0xFFC7F3BF),
+                      backgroundImage: item.photoUrl != null && item.photoUrl!.isNotEmpty
+                          ? NetworkImage(item.photoUrl!)
+                          : null,
                       radius: 22,
-                      child: Text(
-                        item.fullName.isNotEmpty ? item.fullName[0].toUpperCase() : 'I',
-                        style: TextStyle(
-                          color: isDark ? Colors.white : const Color(0xFF1E4720),
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                        ),
-                      ),
+                      child: (item.photoUrl == null || item.photoUrl!.isEmpty)
+                          ? Text(
+                              item.fullName.isNotEmpty ? item.fullName[0].toUpperCase() : 'I',
+                              style: TextStyle(
+                                color: isDark ? Colors.white : const Color(0xFF1E4720),
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
+                            )
+                          : null,
                     ),
                     const SizedBox(width: 14),
                     Expanded(

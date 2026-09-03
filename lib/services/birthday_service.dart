@@ -20,24 +20,26 @@ class BirthdayService {
 
       if (list != null) {
         await StorageService.saveCachedBirthdays('today', list);
+        final now = DateTime.now();
         return list
-            .whereType<Map<String, dynamic>>()
+            .whereType<Map>()
             .map((item) => BirthdayModel.fromJson(
-                  item,
-                  defaultDay: DateTime.now().day,
-                  defaultMonth: DateTime.now().month,
+                  Map<String, dynamic>.from(item),
+                  defaultDay: now.day,
+                  defaultMonth: now.month,
                 ))
             .toList();
       }
     } catch (_) {
       final cached = await StorageService.getCachedBirthdays('today');
       if (cached != null) {
+        final now = DateTime.now();
         return cached
-            .whereType<Map<String, dynamic>>()
+            .whereType<Map>()
             .map((item) => BirthdayModel.fromJson(
-                  item,
-                  defaultDay: DateTime.now().day,
-                  defaultMonth: DateTime.now().month,
+                  Map<String, dynamic>.from(item),
+                  defaultDay: now.day,
+                  defaultMonth: now.month,
                 ))
             .toList();
       }
@@ -62,16 +64,16 @@ class BirthdayService {
       if (list != null) {
         await StorageService.saveCachedBirthdays('upcoming', list);
         return list
-            .whereType<Map<String, dynamic>>()
-            .map((item) => BirthdayModel.fromJson(item))
+            .whereType<Map>()
+            .map((item) => BirthdayModel.fromJson(Map<String, dynamic>.from(item)))
             .toList();
       }
     } catch (_) {
       final cached = await StorageService.getCachedBirthdays('upcoming');
       if (cached != null) {
         return cached
-            .whereType<Map<String, dynamic>>()
-            .map((item) => BirthdayModel.fromJson(item))
+            .whereType<Map>()
+            .map((item) => BirthdayModel.fromJson(Map<String, dynamic>.from(item)))
             .toList();
       }
     }
@@ -86,8 +88,25 @@ class BirthdayService {
         requiresAuth: true,
       );
 
-      return _extractBirthdays(response);
+      final list = (response is List)
+          ? response
+          : ((response is Map && response['data'] is List)
+              ? (response['data'] as List)
+              : null);
+
+      if (list != null) {
+        await StorageService.saveCachedBirthdays('calendar', list);
+        return _extractBirthdays(list);
+      }
+
+      final extracted = _extractBirthdays(response);
+      return extracted;
     } catch (_) {}
+
+    final cached = await StorageService.getCachedBirthdays('calendar');
+    if (cached != null) {
+      return _extractBirthdays(cached);
+    }
     return [];
   }
 
@@ -98,62 +117,85 @@ class BirthdayService {
 
     if (data is List) {
       for (final item in data) {
-        if (item is Map<String, dynamic>) {
-          final monthNum = int.tryParse(item['month']?.toString() ?? '');
-          final monthName = item['month_name'] ?? item['name'] ?? (item['month'] is String ? item['month'] : null);
+        if (item is Map) {
+          final mapItem = Map<String, dynamic>.from(item);
+
+          final monthNum = int.tryParse(mapItem['month_number']?.toString() ?? '') ??
+              int.tryParse(mapItem['monthNumber']?.toString() ?? '') ??
+              int.tryParse(mapItem['month']?.toString() ?? '');
+          final monthName = mapItem['month_name'] ??
+              mapItem['monthName'] ??
+              mapItem['name'] ??
+              (mapItem['month'] is String ? mapItem['month'] : null);
           final resolvedMonth = monthNum ?? _monthNameToNumber(monthName?.toString());
 
-          if (item['birthdays'] is List) {
-            for (final b in (item['birthdays'] as List)) {
-              if (b is Map<String, dynamic>) {
-                results.add(BirthdayModel.fromJson(b, defaultMonth: resolvedMonth));
+          final dynamic birthdaysList = mapItem['birthdays'] ??
+              mapItem['users'] ??
+              mapItem['collaborators'] ??
+              mapItem['items'] ??
+              mapItem['colaboradores'];
+
+          if (birthdaysList is List) {
+            for (final b in birthdaysList) {
+              if (b is Map) {
+                final bMap = Map<String, dynamic>.from(b);
+                final dayNum = int.tryParse(bMap['day_number']?.toString() ?? '') ??
+                    int.tryParse(bMap['dayNumber']?.toString() ?? '') ??
+                    int.tryParse(bMap['day']?.toString() ?? '');
+                final mNum = int.tryParse(bMap['month_number']?.toString() ?? '') ??
+                    int.tryParse(bMap['month']?.toString() ?? '') ??
+                    resolvedMonth;
+                results.add(BirthdayModel.fromJson(bMap, defaultMonth: mNum, defaultDay: dayNum));
               }
             }
-          } else if (item['users'] is List) {
-            for (final u in (item['users'] as List)) {
-              if (u is Map<String, dynamic>) {
-                results.add(BirthdayModel.fromJson(u, defaultMonth: resolvedMonth));
-              }
-            }
-          } else if (item['collaborators'] is List) {
-            for (final c in (item['collaborators'] as List)) {
-              if (c is Map<String, dynamic>) {
-                results.add(BirthdayModel.fromJson(c, defaultMonth: resolvedMonth));
-              }
-            }
-          } else if (item['days'] is List) {
-            for (final dayItem in (item['days'] as List)) {
-              if (dayItem is Map<String, dynamic>) {
-                final dayNum = int.tryParse(dayItem['day']?.toString() ?? '');
-                final dayUsers = dayItem['users'] ?? dayItem['birthdays'] ?? dayItem['collaborators'];
+          } else if (mapItem['days'] is List) {
+            for (final dayItem in (mapItem['days'] as List)) {
+              if (dayItem is Map) {
+                final dayMap = Map<String, dynamic>.from(dayItem);
+                final dayNum = int.tryParse(dayMap['day_number']?.toString() ?? '') ??
+                    int.tryParse(dayMap['dayNumber']?.toString() ?? '') ??
+                    int.tryParse(dayMap['day']?.toString() ?? '');
+                final dayUsers = dayMap['users'] ?? dayMap['birthdays'] ?? dayMap['collaborators'];
                 if (dayUsers is List) {
                   for (final u in dayUsers) {
-                    if (u is Map<String, dynamic>) {
-                      results.add(BirthdayModel.fromJson(u, defaultMonth: resolvedMonth, defaultDay: dayNum));
+                    if (u is Map) {
+                      results.add(BirthdayModel.fromJson(
+                        Map<String, dynamic>.from(u),
+                        defaultMonth: resolvedMonth,
+                        defaultDay: dayNum,
+                      ));
                     }
                   }
                 }
               }
             }
           } else {
-            results.add(BirthdayModel.fromJson(item, defaultMonth: resolvedMonth));
+            // Elemento directo de usuario/cumpleañero
+            final dayNum = int.tryParse(mapItem['day_number']?.toString() ?? '') ??
+                int.tryParse(mapItem['dayNumber']?.toString() ?? '') ??
+                int.tryParse(mapItem['day']?.toString() ?? '');
+            results.add(BirthdayModel.fromJson(mapItem, defaultMonth: resolvedMonth, defaultDay: dayNum));
           }
         }
       }
-    } else if (data is Map<String, dynamic>) {
-      if (data['data'] != null) {
-        return _extractBirthdays(data['data']);
+    } else if (data is Map) {
+      final mapData = Map<String, dynamic>.from(data);
+      if (mapData['data'] != null) {
+        return _extractBirthdays(mapData['data']);
       }
-      if (data['months'] != null) {
-        return _extractBirthdays(data['months']);
+      if (mapData['months'] != null) {
+        return _extractBirthdays(mapData['months']);
       }
 
-      data.forEach((key, value) {
+      mapData.forEach((key, value) {
         final monthNum = int.tryParse(key) ?? _monthNameToNumber(key);
         if (value is List) {
           for (final item in value) {
-            if (item is Map<String, dynamic>) {
-              results.add(BirthdayModel.fromJson(item, defaultMonth: monthNum));
+            if (item is Map) {
+              final itemMap = Map<String, dynamic>.from(item);
+              final dayNum = int.tryParse(itemMap['day_number']?.toString() ?? '') ??
+                  int.tryParse(itemMap['day']?.toString() ?? '');
+              results.add(BirthdayModel.fromJson(itemMap, defaultMonth: monthNum, defaultDay: dayNum));
             }
           }
         }

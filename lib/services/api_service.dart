@@ -17,6 +17,18 @@ class ApiException implements Exception {
 class ApiService {
   static const Duration _timeoutDuration = Duration(seconds: 15);
 
+  // Comprueba rápidamente si el servidor backend responde
+  static Future<bool> checkServerHealth() async {
+    try {
+      final res = await http
+          .get(Uri.parse('http://localhost:3000/api/users/me'))
+          .timeout(const Duration(seconds: 3));
+      return res.statusCode > 0;
+    } catch (_) {
+      return false;
+    }
+  }
+
   static Future<Map<String, String>> _getHeaders({bool requiresAuth = true}) async {
     final headers = <String, String>{
       'Content-Type': 'application/json',

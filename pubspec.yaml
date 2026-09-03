@@ -41,6 +41,7 @@ dependencies:
   flutter_local_notifications: ^17.2.2
   pdf: ^3.11.1
   printing: ^5.13.2
+  local_auth: ^2.3.0
 
 
 
