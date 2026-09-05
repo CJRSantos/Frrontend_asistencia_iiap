@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import '../../models/user_model.dart';
 import '../../models/attendance_model.dart';
 import '../../services/storage_service.dart';
@@ -22,6 +22,7 @@ class DashboardTab extends StatefulWidget {
 
 class _DashboardTabState extends State<DashboardTab> {
   List<AttendanceModel> _todayRecords = [];
+  List<AttendanceModel> _institutionalRecords = [];
   bool _isLoadingToday = true;
 
   @override
@@ -33,12 +34,23 @@ class _DashboardTabState extends State<DashboardTab> {
   Future<void> _loadTodayAttendance() async {
     setState(() => _isLoadingToday = true);
     try {
-      final records = await AttendanceService.getTodayRecords();
-      if (mounted) {
-        setState(() {
-          _todayRecords = records;
-          _isLoadingToday = false;
-        });
+      final user = StorageService.currentUser;
+      if (user?.isAdmin == true) {
+        final all = await AttendanceService.getAllRecords();
+        if (mounted) {
+          setState(() {
+            _institutionalRecords = all.take(5).toList();
+            _isLoadingToday = false;
+          });
+        }
+      } else {
+        final records = await AttendanceService.getTodayRecords();
+        if (mounted) {
+          setState(() {
+            _todayRecords = records;
+            _isLoadingToday = false;
+          });
+        }
       }
     } catch (_) {
       if (mounted) {
@@ -292,45 +304,50 @@ class _DashboardTabState extends State<DashboardTab> {
                 ),
                 const SizedBox(height: 12),
 
-                // BOTÓN 1: GENERAR QR (Para Admin y los 3 Supervisores)
-                _buildActionCard(
-                  context,
-                  title: 'Generar QR',
-                  subtitle: user.canManageAttendanceQr
-                      ? 'Emisión institucional con cifrado SHA-256 (5 min)'
-                      : 'Exclusivo para Administrador y 3 Supervisores',
-                  icon: Icons.qr_code_2_rounded,
-                  color: const Color(0xFF16A34A),
-                  badgeText: user.canManageAttendanceQr ? 'SHA-256' : 'RESTRINGIDO',
-                  badgeColor: user.canManageAttendanceQr ? const Color(0xFF16A34A) : const Color(0xFF94A3B8),
-                  isLocked: !user.canManageAttendanceQr,
-                  onTap: () => _handleGenerarQr(context, user),
-                ),
+                // ACCIONES CONDICIONALES POR ROL:
+                // - Administrador: SOLO botón "Generar QR"
+                // - Supervisores: AMBOS botones ("Generar QR" y "Escanear QR" para marcar su propia asistencia)
+                // - Personal regular: SOLO botón "Escanear QR"
+                if (user.canManageAttendanceQr) ...[
+                  _buildActionCard(
+                    context,
+                    title: 'Generar QR de Asistencia',
+                    subtitle: 'Emisión institucional con cifrado SHA-256 (Rotación automática)',
+                    icon: Icons.qr_code_2_rounded,
+                    color: const Color(0xFF16A34A),
+                    badgeText: 'SHA-256',
+                    badgeColor: const Color(0xFF16A34A),
+                    isLocked: false,
+                    onTap: () => _handleGenerarQr(context, user),
+                  ),
+                  if (user.isSupervisor) const SizedBox(height: 12),
+                ],
 
-                const SizedBox(height: 12),
-
-                // BOTÓN 2: ESCANEAR QR (Para todos los usuarios)
-                _buildActionCard(
-                  context,
-                  title: 'Escanear QR',
-                  subtitle: 'Registra tu asistencia escaneando el código QR institucional',
-                  icon: Icons.qr_code_scanner_rounded,
-                  color: const Color(0xFF2563EB),
-                  badgeText: 'CÁMARA',
-                  badgeColor: const Color(0xFF2563EB),
-                  isLocked: false,
-                  onTap: () => _handleEscanearQr(context),
-                ),
+                if (!user.isAdmin) ...[
+                  _buildActionCard(
+                    context,
+                    title: 'Escanear QR',
+                    subtitle: 'Registra tu asistencia escaneando el código QR institucional',
+                    icon: Icons.qr_code_scanner_rounded,
+                    color: const Color(0xFF2563EB),
+                    badgeText: 'CÁMARA',
+                    badgeColor: const Color(0xFF2563EB),
+                    isLocked: false,
+                    onTap: () => _handleEscanearQr(context),
+                  ),
+                ],
 
                 const SizedBox(height: 24),
 
-                // Sección Asistencias del Día de Hoy (con overflow prevention)
+                // Sección Asistencias:
+                // Para el Administrador: Registro Institucional Reciente
+                // Para Personal / Supervisor: Mis Marcas de Hoy
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Expanded(
                       child: Text(
-                        'Mis Marcas de Hoy',
+                        user.isAdmin ? 'Marcas Institucionales Recientes' : 'Mis Marcas de Hoy',
                         style: TextStyle(
                           fontSize: 15.5,
                           fontWeight: FontWeight.bold,
@@ -345,7 +362,10 @@ class _DashboardTabState extends State<DashboardTab> {
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       ),
                       onPressed: widget.onNavigateToHistory,
-                      child: const Text('Ver Historial', style: TextStyle(fontSize: 12.5)),
+                      child: Text(
+                        user.isAdmin ? 'Ver Registro Completo' : 'Ver Historial',
+                        style: const TextStyle(fontSize: 12.5),
+                      ),
                     ),
                   ],
                 ),
@@ -356,6 +376,43 @@ class _DashboardTabState extends State<DashboardTab> {
                     padding: EdgeInsets.symmetric(vertical: 24),
                     child: Center(child: CircularProgressIndicator()),
                   )
+                else if (user.isAdmin)
+                  if (_institutionalRecords.isEmpty)
+                    Container(
+                      padding: const EdgeInsets.all(22),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                        ),
+                      ),
+                      child: Column(
+                        children: [
+                          Icon(
+                            Icons.corporate_fare_rounded,
+                            size: 38,
+                            color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
+                          ),
+                          const SizedBox(height: 10),
+                          const Text(
+                            'Sin marcas registradas hoy',
+                            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Cuando los colaboradores escaneen el QR, sus asistencias se mostrarán aquí.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  else
+                    ..._institutionalRecords.map((r) => AttendanceCard(record: r, showUserName: true))
                 else if (_todayRecords.isEmpty)
                   Container(
                     padding: const EdgeInsets.all(22),
@@ -391,7 +448,7 @@ class _DashboardTabState extends State<DashboardTab> {
                     ),
                   )
                 else
-                  ..._todayRecords.map((r) => AttendanceCard(record: r)),
+                  ..._todayRecords.map((r) => AttendanceCard(record: r, showUserName: false)),
               ],
             ),
           ),

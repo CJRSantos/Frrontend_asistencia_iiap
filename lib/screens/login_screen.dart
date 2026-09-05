@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import '../config/api_config.dart';
 import '../services/auth_service.dart';
 import '../services/theme_service.dart';
@@ -29,78 +29,138 @@ class _LoginScreenState extends State<LoginScreen> {
 
     showDialog(
       context: context,
-      builder: (dialogCtx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: const Text('ConfiguraciÃ³n del Servidor Backend', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'URL del servidor NestJS:',
-              style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+      builder: (dialogCtx) {
+        final isDark = Theme.of(dialogCtx).brightness == Brightness.dark;
+
+        return AlertDialog(
+          backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          title: Text(
+            'Configuración del Servidor Backend',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: isDark ? Colors.white : const Color(0xFF0F172A),
             ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: ctrl,
-              decoration: InputDecoration(
-                hintText: 'http://localhost:3000/api o http://192.168.1.108:3000/api',
-                filled: true,
-                fillColor: const Color(0xFFF8FAFC),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'URL del servidor NestJS:',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: ctrl,
+                style: TextStyle(
+                  color: isDark ? Colors.white : const Color(0xFF0F172A),
+                  fontSize: 13,
+                ),
+                decoration: InputDecoration(
+                  hintText: 'http://localhost:3000/api o http://192.168.1.108:3000/api',
+                  hintStyle: TextStyle(
+                    fontSize: 12,
+                    color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
+                  ),
+                  filled: true,
+                  fillColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide(
+                      color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
+                    ),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide(
+                      color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
+                    ),
+                  ),
+                  focusedBorder: const OutlineInputBorder(
+                    borderRadius: BorderRadius.all(Radius.circular(10)),
+                    borderSide: BorderSide(
+                      color: Color(0xFF2D5E2A),
+                      width: 1.8,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        side: BorderSide(color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1)),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                      onPressed: () => ctrl.text = 'http://localhost:3000/api',
+                      child: Text(
+                        'localhost (USB)',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: isDark ? const Color(0xFF4ADE80) : const Color(0xFF2D5E2A),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        side: BorderSide(color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1)),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                      onPressed: () => ctrl.text = ApiConfig.localWifiUrl,
+                      child: Text(
+                        'Wi-Fi Local',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: isDark ? const Color(0xFF4ADE80) : const Color(0xFF2D5E2A),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogCtx).pop(),
+              child: Text(
+                'Cancelar',
+                style: TextStyle(
+                  color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                ),
               ),
             ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    ),
-                    onPressed: () => ctrl.text = 'http://localhost:3000/api',
-                    child: const Text('localhost (USB)', style: TextStyle(fontSize: 11)),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton(
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    ),
-                    onPressed: () => ctrl.text = ApiConfig.localWifiUrl,
-                    child: const Text('Wi-Fi Local', style: TextStyle(fontSize: 11)),
-                  ),
-                ),
-              ],
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2D5E2A),
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () async {
+                await ApiConfig.setCustomBaseUrl(ctrl.text);
+                if (dialogCtx.mounted) {
+                  Navigator.of(dialogCtx).pop();
+                  ScaffoldMessenger.of(dialogCtx).showSnackBar(
+                    SnackBar(content: Text('Servidor configurado en: ${ApiConfig.baseUrl}')),
+                  );
+                }
+              },
+              child: const Text('Guardar'),
             ),
           ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogCtx).pop(),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF2D5E2A),
-              foregroundColor: Colors.white,
-            ),
-            onPressed: () async {
-              await ApiConfig.setCustomBaseUrl(ctrl.text);
-              if (dialogCtx.mounted) {
-                Navigator.of(dialogCtx).pop();
-                ScaffoldMessenger.of(dialogCtx).showSnackBar(
-                  SnackBar(content: Text('Servidor configurado en: ${ApiConfig.baseUrl}')),
-                );
-              }
-            },
-            child: const Text('Guardar'),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -132,7 +192,7 @@ class _LoginScreenState extends State<LoginScreen> {
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  'Â¡Bienvenido(a), ${user.fullName}!',
+                  '¡Bienvenido(a), ${user.fullName}!',
                   style: const TextStyle(fontWeight: FontWeight.w500),
                 ),
               ),
@@ -290,7 +350,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      'Iniciar SesiÃ³n',
+                                      'Iniciar Sesion',
                                       style: TextStyle(
                                         fontSize: 22,
                                         fontWeight: FontWeight.bold,
@@ -312,7 +372,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                           const SizedBox(height: 14),
                           Text(
-                            'Ingresa tus credenciales institucionales para acceder al registro de asistencias y escaneo de cÃ³digos QR.',
+                            'Ingresa tus credenciales institucionales para acceder al registro de asistencias y escaneo de codigos QR.',
                             style: TextStyle(
                               fontSize: 13,
                               height: 1.4,
@@ -328,16 +388,16 @@ class _LoginScreenState extends State<LoginScreen> {
                     // Campos del Formulario
                     AppTextField(
                       controller: _emailController,
-                      label: 'Correo ElectrÃ³nico',
+                      label: 'Correo Electronico',
                       hint: 'ejemplo@iiap.gob.pe',
                       prefixIcon: Icons.email_outlined,
                       keyboardType: TextInputType.emailAddress,
                       validator: (value) {
                         if (value == null || value.trim().isEmpty) {
-                          return 'Ingresa tu correo electrÃ³nico';
+                          return 'Ingresa tu correo electronico';
                         }
                         if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value.trim())) {
-                          return 'Ingresa un correo electrÃ³nico vÃ¡lido';
+                          return 'Ingresa un correo electronico valido';
                         }
                         return null;
                       },
@@ -347,8 +407,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
                     AppTextField(
                       controller: _passwordController,
-                      label: 'ContraseÃ±a',
-                      hint: 'â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢',
+                      label: 'Contraseña',
+                      hint: '••••••••••',
                       prefixIcon: Icons.lock_outline_rounded,
                       obscureText: _obscurePassword,
                       suffixIcon: IconButton(
@@ -361,10 +421,10 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       validator: (value) {
                         if (value == null || value.isEmpty) {
-                          return 'Ingresa tu contraseÃ±a';
+                          return 'Ingresa tu contraseña';
                         }
                         if (value.length < 6) {
-                          return 'La contraseÃ±a debe tener al menos 6 caracteres';
+                          return 'La contraseña debe tener al menos 6 caracteres';
                         }
                         return null;
                       },
@@ -372,7 +432,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                     const SizedBox(height: 24),
 
-                    // BotÃ³n de Inicio de SesiÃ³n
+                    // Botón de Inicio de Sesión
                     AppButton(
                       text: 'Entrar al Sistema',
                       icon: Icons.login_rounded,
@@ -382,7 +442,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                     const SizedBox(height: 16),
 
-                    // BotÃ³n rÃ¡pido de prueba para Administrador
+                    // Botón rápido de prueba para Administrador
                     Center(
                       child: TextButton.icon(
                         onPressed: _fillQuickAdmin,
@@ -401,7 +461,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Text(
-                          'Â¿AÃºn no tienes cuenta? ',
+                          '¿Aún no tienes cuenta? ',
                           style: TextStyle(
                             fontSize: 13,
                             color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
@@ -414,7 +474,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             );
                           },
                           child: Text(
-                            'RegÃ­strate aquÃ­',
+                            'Regístrate aquí',
                             style: TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.bold,

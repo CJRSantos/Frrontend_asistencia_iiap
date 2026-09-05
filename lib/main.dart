@@ -23,6 +23,7 @@ class MyApp extends StatelessWidget {
         return MaterialApp(
           title: 'IIAP Asistencia',
           debugShowCheckedModeBanner: false,
+          themeAnimationDuration: Duration.zero,
           themeMode: currentMode,
           theme: ThemeData(
             brightness: Brightness.light,

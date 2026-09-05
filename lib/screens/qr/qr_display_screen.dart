@@ -5,6 +5,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../../models/qr_model.dart';
 import '../../services/storage_service.dart';
 import '../../services/attendance_service.dart';
+import '../../services/auth_service.dart';
 import '../../services/api_client.dart';
 import '../../widgets/qr_countdown_timer.dart';
 import '../../widgets/app_button.dart';
@@ -30,27 +31,42 @@ class _QrDisplayScreenState extends State<QrDisplayScreen> {
   QrGeneratedResponse? _qrData;
   bool _isLoading = true;
   bool _isGeneratingNew = false;
+  bool _justRotated = false;
   String? _errorMessage;
   Timer? _pollingTimer;
+  Timer? _rotationResetTimer;
 
   @override
   void initState() {
     super.initState();
+    StorageService.currentUserNotifier.addListener(_onUserRoleChanged);
     _loadQr(forceNew: false);
     _startPolling();
   }
 
   @override
   void dispose() {
+    StorageService.currentUserNotifier.removeListener(_onUserRoleChanged);
     _pollingTimer?.cancel();
+    _rotationResetTimer?.cancel();
     super.dispose();
   }
 
+  void _onUserRoleChanged() {
+    final user = StorageService.currentUser;
+    // Si al usuario se le revoca el cargo mientras tiene abierta la pantalla de QR, salir de inmediato
+    if (user != null && widget.mode == QrMode.attendance && !user.canManageAttendanceQr) {
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
+    }
+  }
+
   void _startPolling() {
-    // Si es modo asistencia, consultar periódicamente si el QR fue consumido por un colaborador
+    // Sondeo rápido cada 1.5 segundos para rotación instantánea al escaneo
     if (widget.mode == QrMode.attendance) {
       _pollingTimer?.cancel();
-      _pollingTimer = Timer.periodic(const Duration(seconds: 4), (_) => _checkForRotatedQr());
+      _pollingTimer = Timer.periodic(const Duration(milliseconds: 1500), (_) => _checkForRotatedQr());
     }
   }
 
@@ -59,24 +75,47 @@ class _QrDisplayScreenState extends State<QrDisplayScreen> {
     try {
       final active = await AttendanceService.getActiveAttendanceQr();
       if (mounted && active.qrCode != _qrData?.qrCode) {
+        HapticFeedback.heavyImpact();
+        _rotationResetTimer?.cancel();
+
         setState(() {
           _qrData = active;
+          _justRotated = true;
         });
+
+        _rotationResetTimer = Timer(const Duration(seconds: 4), () {
+          if (mounted) {
+            setState(() => _justRotated = false);
+          }
+        });
+
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Row(
+          SnackBar(
+            content: const Row(
               children: [
-                Icon(Icons.autorenew_rounded, color: Colors.white, size: 18),
-                SizedBox(width: 8),
+                Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
+                SizedBox(width: 10),
                 Expanded(
-                  child: Text('Código QR renovado automáticamente tras escaneo de un colaborador.'),
+                  child: Text(
+                    '¡Código QR renovado! Un colaborador acaba de registrar su asistencia.',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  ),
                 ),
               ],
             ),
-            backgroundColor: Color(0xFF16A34A),
-            duration: Duration(seconds: 3),
+            backgroundColor: const Color(0xFF16A34A),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            duration: const Duration(seconds: 3),
           ),
         );
+      }
+    } on ApiException catch (e) {
+      if (e.statusCode == 400 || e.statusCode == 403) {
+        try {
+          await AuthService.getProfile();
+        } catch (_) {}
       }
     } catch (_) {
       // Ignorar errores silenciosos en sondeo de fondo
@@ -112,6 +151,11 @@ class _QrDisplayScreenState extends State<QrDisplayScreen> {
         });
       }
     } on ApiException catch (e) {
+      if (e.statusCode == 400 || e.statusCode == 403) {
+        try {
+          await AuthService.getProfile();
+        } catch (_) {}
+      }
       if (mounted) {
         setState(() {
           _errorMessage = e.message;
@@ -276,16 +320,62 @@ class _QrDisplayScreenState extends State<QrDisplayScreen> {
 
                   const SizedBox(height: 20),
 
+                  // Aviso visual animado si se acaba de renovar automáticamente
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 300),
+                    child: _justRotated
+                        ? Container(
+                            key: const ValueKey('rotated_badge'),
+                            margin: const EdgeInsets.only(bottom: 12),
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF16A34A),
+                              borderRadius: BorderRadius.circular(20),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: const Color(0xFF16A34A).withValues(alpha: 0.45),
+                                  blurRadius: 12,
+                                  offset: const Offset(0, 3),
+                                ),
+                              ],
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.autorenew_rounded, color: Colors.white, size: 18),
+                                SizedBox(width: 8),
+                                Text(
+                                  '¡NUEVO QR GENERADO TRAS ESCANEO!',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 11.5,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        : const SizedBox.shrink(key: ValueKey('empty')),
+                  ),
+
                   // Caja del Código QR Generado
-                  Container(
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 350),
                     padding: const EdgeInsets.all(22),
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(24),
+                      border: Border.all(
+                        color: _justRotated ? const Color(0xFF16A34A) : Colors.transparent,
+                        width: _justRotated ? 3.5 : 0,
+                      ),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withValues(alpha: isDark ? 0.35 : 0.08),
-                          blurRadius: 18,
+                          color: _justRotated
+                              ? const Color(0xFF16A34A).withValues(alpha: 0.4)
+                              : Colors.black.withValues(alpha: isDark ? 0.35 : 0.08),
+                          blurRadius: _justRotated ? 24 : 18,
                           offset: const Offset(0, 6),
                         ),
                       ],
@@ -337,18 +427,26 @@ class _QrDisplayScreenState extends State<QrDisplayScreen> {
                             : Column(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  QrImageView(
-                                    data: _qrData!.qrCode,
-                                    version: QrVersions.auto,
-                                    size: 230,
-                                    backgroundColor: Colors.white,
-                                    eyeStyle: const QrEyeStyle(
-                                      eyeShape: QrEyeShape.square,
-                                      color: Color(0xFF0F172A),
+                                  AnimatedSwitcher(
+                                    duration: const Duration(milliseconds: 350),
+                                    transitionBuilder: (child, anim) => ScaleTransition(
+                                      scale: anim,
+                                      child: FadeTransition(opacity: anim, child: child),
                                     ),
-                                    dataModuleStyle: const QrDataModuleStyle(
-                                      dataModuleShape: QrDataModuleShape.square,
-                                      color: Color(0xFF0F172A),
+                                    child: QrImageView(
+                                      key: ValueKey(_qrData!.qrCode),
+                                      data: _qrData!.qrCode,
+                                      version: QrVersions.auto,
+                                      size: 230,
+                                      backgroundColor: Colors.white,
+                                      eyeStyle: const QrEyeStyle(
+                                        eyeShape: QrEyeShape.square,
+                                        color: Color(0xFF0F172A),
+                                      ),
+                                      dataModuleStyle: const QrDataModuleStyle(
+                                        dataModuleShape: QrDataModuleShape.square,
+                                        color: Color(0xFF0F172A),
+                                      ),
                                     ),
                                   ),
                                   const SizedBox(height: 14),

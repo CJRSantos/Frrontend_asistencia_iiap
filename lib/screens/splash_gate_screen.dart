@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../services/storage_service.dart';
 import '../services/auth_service.dart';
 import '../widgets/leaf_logo.dart';
@@ -20,75 +21,136 @@ class _SplashGateScreenState extends State<SplashGateScreen> {
   }
 
   Future<void> _checkAuth() async {
-    // Breve pausa para presentación visual fluida
-    await Future.delayed(const Duration(milliseconds: 600));
+    // Pausa breve y óptima para una transición instantánea y fluida
+    await Future.delayed(const Duration(milliseconds: 350));
 
     final token = await StorageService.getToken();
     if (token != null && token.isNotEmpty) {
       try {
         await AuthService.getProfile();
         if (mounted) {
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (_) => const HomeScreen()),
-          );
+          _navigateTo(const HomeScreen());
           return;
         }
       } catch (_) {
-        // Si el token falló, StorageService ya lo limpió en ApiClient
+        // Si el token falló o expiró, continuará al login
       }
     }
 
     if (mounted) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const LoginScreen()),
-      );
+      _navigateTo(const LoginScreen());
     }
+  }
+
+  void _navigateTo(Widget targetScreen) {
+    Navigator.of(context).pushReplacement(
+      PageRouteBuilder(
+        transitionDuration: const Duration(milliseconds: 220),
+        pageBuilder: (context, animation, secondaryAnimation) => targetScreen,
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return FadeTransition(opacity: animation, child: child);
+        },
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            LeafLogo(
-              size: 72,
-              color: isDark ? const Color(0xFF4ADE80) : const Color(0xFF2D5E2A),
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.light,
+        systemNavigationBarColor: Color(0xFF0F2911),
+        systemNavigationBarIconBrightness: Brightness.light,
+      ),
+      child: Scaffold(
+        backgroundColor: const Color(0xFF2B542E),
+        body: Container(
+          width: double.infinity,
+          height: double.infinity,
+          decoration: const BoxDecoration(
+            gradient: RadialGradient(
+              center: Alignment(0.0, -0.05),
+              radius: 1.15,
+              colors: [
+                Color(0xFF4C8050), // Centro verde luminoso
+                Color(0xFF3F6C42), // Verde medio institucional
+                Color(0xFF234B26), // Transición a verde oscuro
+                Color(0xFF133215), // Verde profundo
+                Color(0xFF0C240E), // Base inferior oscura
+              ],
+              stops: [0.0, 0.35, 0.65, 0.88, 1.0],
             ),
-            const SizedBox(height: 20),
-            Text(
-              'IIAP Asistencia',
-              style: TextStyle(
-                fontSize: 26,
-                fontWeight: FontWeight.bold,
-                color: isDark ? const Color(0xFF81C784) : const Color(0xFF1E4720),
-                letterSpacing: 0.5,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Sistema de Control de Asistencia y QR',
-              style: TextStyle(
-                fontSize: 13,
-                color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
-              ),
-            ),
-            const SizedBox(height: 36),
-            SizedBox(
-              width: 28,
-              height: 28,
-              child: CircularProgressIndicator(
-                strokeWidth: 2.8,
-                valueColor: AlwaysStoppedAnimation<Color>(
-                  isDark ? const Color(0xFF4ADE80) : const Color(0xFF2D5E2A),
+          ),
+          child: SafeArea(
+            child: Stack(
+              children: [
+                // Logo central IIAP
+                Center(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      const LeafLogo(
+                        size: 46,
+                        color: Color(0xFF98E28D),
+                      ),
+                      const SizedBox(width: 14),
+                      const Text(
+                        'IIAP',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 46,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1.5,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
+
+                // Pie de página institucional
+                Align(
+                  alignment: Alignment.bottomCenter,
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 32, left: 24, right: 24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text(
+                          'CONTROL DE ASISTENCIA',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 2.0,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Container(
+                          width: 44,
+                          height: 1.2,
+                          color: Colors.white.withValues(alpha: 0.35),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Instituto de Investigaciones de la\nAmazonía Peruana',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.9),
+                            fontSize: 12,
+                            height: 1.45,
+                            fontWeight: FontWeight.w400,
+                            letterSpacing: 0.2,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );

@@ -23,11 +23,15 @@ class _AttendanceTabState extends State<AttendanceTab> with SingleTickerProvider
   void initState() {
     super.initState();
     final user = StorageService.currentUserNotifier.value;
-    if (user != null && user.canManageAttendanceQr) {
+    if (user != null && user.isAdmin) {
+      _loadAllRecords();
+    } else if (user != null && user.isSupervisor) {
       _tabController = TabController(length: 2, vsync: this);
       _loadAllRecords();
+      _loadMyRecords();
+    } else {
+      _loadMyRecords();
     }
-    _loadMyRecords();
   }
 
   @override
@@ -74,15 +78,40 @@ class _AttendanceTabState extends State<AttendanceTab> with SingleTickerProvider
     return ValueListenableBuilder<UserModel?>(
       valueListenable: StorageService.currentUserNotifier,
       builder: (context, user, _) {
-        final canManage = user != null && user.canManageAttendanceQr;
+        final isAdmin = user != null && user.isAdmin;
+        final isSupervisor = user != null && user.isSupervisor;
 
-        if (!canManage) {
+        // 1. Administrador General: NO tiene "Mis Asistencias", SOLO Registro Institucional
+        if (isAdmin) {
+          return Scaffold(
+            appBar: AppBar(
+              title: const Text('Registro Institucional', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+              actions: [
+                IconButton(
+                  icon: const Icon(Icons.refresh_rounded),
+                  tooltip: 'Actualizar',
+                  onPressed: _loadAllRecords,
+                ),
+              ],
+            ),
+            body: _buildList(_allRecords, _isLoadingAll, _loadAllRecords, showUserName: true),
+          );
+        }
+
+        // 2. Colaborador Regular: Solo su propio historial de asistencias
+        if (!isSupervisor) {
+          if (_myRecords.isEmpty && !_isLoadingMy) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) _loadMyRecords();
+            });
+          }
           return Scaffold(
             appBar: AppBar(
               title: const Text('Historial de Asistencias', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
               actions: [
                 IconButton(
                   icon: const Icon(Icons.refresh_rounded),
+                  tooltip: 'Actualizar',
                   onPressed: _loadMyRecords,
                 ),
               ],
@@ -91,6 +120,15 @@ class _AttendanceTabState extends State<AttendanceTab> with SingleTickerProvider
           );
         }
 
+        // 3. Supervisor: Tiene sus marcas personales y el registro institucional general
+        if (_tabController == null) {
+          _tabController = TabController(length: 2, vsync: this);
+          if (_allRecords.isEmpty && !_isLoadingAll) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) _loadAllRecords();
+            });
+          }
+        }
         return Scaffold(
           appBar: AppBar(
             title: const Text('Control de Asistencias', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),

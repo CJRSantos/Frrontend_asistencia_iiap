@@ -66,57 +66,107 @@ class _ProfileTabState extends State<ProfileTab> {
 
     showDialog(
       context: context,
-      builder: (dialogCtx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: const Text('Configuración del Servidor Backend', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'URL del servidor NestJS:',
-              style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+      builder: (dialogCtx) {
+        final isDark = Theme.of(dialogCtx).brightness == Brightness.dark;
+
+        return AlertDialog(
+          backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          title: Text(
+            'Configuración del Servidor Backend',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: isDark ? Colors.white : const Color(0xFF0F172A),
             ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: ctrl,
-              decoration: InputDecoration(
-                hintText: 'http://10.0.2.2:3000/api o http://localhost:3000/api',
-                filled: true,
-                fillColor: const Color(0xFFF8FAFC),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'URL del servidor NestJS:',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: ctrl,
+                style: TextStyle(
+                  color: isDark ? Colors.white : const Color(0xFF0F172A),
+                  fontSize: 13,
+                ),
+                decoration: InputDecoration(
+                  hintText: 'http://10.0.2.2:3000/api o http://localhost:3000/api',
+                  hintStyle: TextStyle(
+                    fontSize: 12,
+                    color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
+                  ),
+                  filled: true,
+                  fillColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide(
+                      color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
+                    ),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide(
+                      color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
+                    ),
+                  ),
+                  focusedBorder: const OutlineInputBorder(
+                    borderRadius: BorderRadius.all(Radius.circular(10)),
+                    borderSide: BorderSide(
+                      color: Color(0xFF2D5E2A),
+                      width: 1.8,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                '• Android Emulator: http://10.0.2.2:3000/api\n• Windows/Web: http://localhost:3000/api\n• Celular físico: http://<TU_IP_LOCAL>:3000/api',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                  height: 1.4,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogCtx).pop(),
+              child: Text(
+                'Cancelar',
+                style: TextStyle(
+                  color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                ),
               ),
             ),
-            const SizedBox(height: 10),
-            const Text(
-              '• Android Emulator: http://10.0.2.2:3000/api\n• Windows/Web: http://localhost:3000/api\n• Celular físico: http://<TU_IP_LOCAL>:3000/api',
-              style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8), height: 1.4),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2D5E2A),
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () async {
+                await ApiConfig.setCustomBaseUrl(ctrl.text);
+                if (dialogCtx.mounted) {
+                  Navigator.of(dialogCtx).pop();
+                  ScaffoldMessenger.of(dialogCtx).showSnackBar(
+                    SnackBar(content: Text('Servidor configurado en: ${ApiConfig.baseUrl}')),
+                  );
+                }
+              },
+              child: const Text('Guardar'),
             ),
           ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogCtx).pop(),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF2D5E2A),
-              foregroundColor: Colors.white,
-            ),
-            onPressed: () async {
-              await ApiConfig.setCustomBaseUrl(ctrl.text);
-              if (dialogCtx.mounted) {
-                Navigator.of(dialogCtx).pop();
-                ScaffoldMessenger.of(dialogCtx).showSnackBar(
-                  SnackBar(content: Text('Servidor configurado en: ${ApiConfig.baseUrl}')),
-                );
-              }
-            },
-            child: const Text('Guardar'),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 

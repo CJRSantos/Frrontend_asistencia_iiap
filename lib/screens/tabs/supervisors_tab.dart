@@ -37,11 +37,22 @@ class _SupervisorsTabState extends State<SupervisorsTab> {
       final usersData = await UsersService.findAll();
 
       if (mounted) {
+        final list = supData['supervisors'] is List ? (supData['supervisors'] as List) : [];
+        final totalCount = (supData['total'] is int)
+            ? supData['total'] as int
+            : (supData['current_count'] is int ? supData['current_count'] as int : list.length);
+        final maxSup = (supData['max_limit'] is int)
+            ? supData['max_limit'] as int
+            : (supData['max_supervisors'] is int ? supData['max_supervisors'] as int : 3);
+        final avail = (supData['available_slots'] is int)
+            ? supData['available_slots'] as int
+            : (maxSup - totalCount).clamp(0, maxSup);
+
         setState(() {
-          _activeSupervisorsCount = supData['current_count'] is int ? supData['current_count'] : 0;
-          _maxSupervisors = supData['max_supervisors'] is int ? supData['max_supervisors'] : 3;
-          _availableSlots = supData['available_slots'] is int ? supData['available_slots'] : 3;
-          _supervisorsList = supData['supervisors'] is List ? supData['supervisors'] : [];
+          _supervisorsList = list;
+          _activeSupervisorsCount = totalCount;
+          _maxSupervisors = maxSup;
+          _availableSlots = avail;
           _allUsers = usersData;
           _isLoading = false;
         });

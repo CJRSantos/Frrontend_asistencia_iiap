@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import '../../services/attendance_service.dart';
 import '../../services/auth_service.dart';
@@ -44,7 +44,19 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
     setState(() => _isProcessing = true);
 
     try {
-      if (widget.target == ScanTarget.attendance) {
+      // 1. Si el target es explícitamente supervisorPromotion
+      if (widget.target == ScanTarget.supervisorPromotion) {
+        final result = await AttendanceService.scanSupervisorQr(cleanCode);
+        await AuthService.getProfile();
+        if (!mounted) return;
+
+        await _showSupervisorSuccessDialog(result['message']?.toString());
+        if (mounted) Navigator.of(context).pop(true);
+        return;
+      }
+
+      // 2. Modo Asistencia o General: Intentar registrar asistencia
+      try {
         final result = await AttendanceService.scanAttendanceQr(qrCode: cleanCode);
         if (!mounted) return;
 
@@ -54,21 +66,22 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
           detail: 'Marca: ${result.typeLabel ?? "REGISTRO"} • ${result.formattedTime ?? ""}',
           isShaVerified: true,
         );
-      } else {
-        final result = await AttendanceService.scanSupervisorQr(cleanCode);
-        await AuthService.getProfile();
-        if (!mounted) return;
+        if (mounted) Navigator.of(context).pop(true);
+        return;
+      } on ApiException catch (_) {
+        // 3. Detección automática: Si no es QR de asistencia, comprobar si es QR de Supervisor
+        try {
+          final supervisorResult = await AttendanceService.scanSupervisorQr(cleanCode);
+          await AuthService.getProfile();
+          if (!mounted) return;
 
-        await _showSuccessDialog(
-          title: '¡Ascenso a Supervisor!',
-          message: result['message']?.toString() ?? 'Ahora eres Supervisor institucional.',
-          detail: 'Tu perfil ha sido actualizado con los nuevos permisos.',
-          isShaVerified: true,
-        );
-      }
-
-      if (mounted) {
-        Navigator.of(context).pop(true);
+          await _showSupervisorSuccessDialog(supervisorResult['message']?.toString());
+          if (mounted) Navigator.of(context).pop(true);
+          return;
+        } catch (_) {
+          // Si tampoco fue QR de supervisor, mostrar el mensaje de error de asistencia
+          rethrow;
+        }
       }
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -94,62 +107,75 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        iconPadding: const EdgeInsets.only(top: 16, bottom: 6),
+        titlePadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+        contentPadding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+        actionsPadding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
         icon: Container(
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.all(12),
           decoration: const BoxDecoration(
             color: Color(0xFFDCFCE7),
             shape: BoxShape.circle,
           ),
-          child: const Icon(Icons.check_circle_rounded, color: Color(0xFF16A34A), size: 44),
+          child: const Icon(Icons.check_circle_rounded, color: Color(0xFF16A34A), size: 40),
         ),
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(message, textAlign: TextAlign.center, style: const TextStyle(fontSize: 14)),
-            if (isShaVerified) ...[
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF16A34A).withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: const Color(0xFF16A34A).withValues(alpha: 0.4)),
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.verified_rounded, size: 14, color: Color(0xFF16A34A)),
-                    SizedBox(width: 5),
-                    Text(
-                      'Código Criptográfico SHA-256 Verificado',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF16A34A),
-                      ),
+        title: Text(title, textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 13, height: 1.35),
+              ),
+              if (isShaVerified) ...[
+                const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF16A34A).withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: const Color(0xFF16A34A).withValues(alpha: 0.4)),
+                  ),
+                  child: const FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.verified_rounded, size: 14, color: Color(0xFF16A34A)),
+                        SizedBox(width: 5),
+                        Text(
+                          'Código Criptográfico SHA-256 Verificado',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF16A34A),
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
-              ),
+              ],
+              if (detail != null) ...[
+                const SizedBox(height: 10),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    detail,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
+                  ),
+                ),
+              ],
             ],
-            if (detail != null) ...[
-              const SizedBox(height: 10),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF1F5F9),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  detail,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
-                ),
-              ),
-            ],
-          ],
+          ),
         ),
         actions: [
           Center(
@@ -158,6 +184,81 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
               width: 140,
               height: 42,
               onPressed: () => Navigator.of(ctx).pop(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showSupervisorSuccessDialog(String? serverMessage) async {
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        iconPadding: const EdgeInsets.only(top: 16, bottom: 6),
+        titlePadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+        contentPadding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+        actionsPadding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+        icon: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: const BoxDecoration(
+            color: Color(0xFFF3E8FF),
+            shape: BoxShape.circle,
+          ),
+          child: const Icon(Icons.shield_rounded, color: Color(0xFF9333EA), size: 40),
+        ),
+        title: const Text(
+          '¡Ya eres Supervisor!',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 19),
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                serverMessage ?? '¡Felicitaciones! Has sido designado exitosamente como Supervisor.',
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 13, height: 1.35),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFAF5FF),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFE9D5FF)),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.qr_code_2_rounded, color: Color(0xFF9333EA), size: 22),
+                    SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Tu vista se ha actualizado. Ahora podrás Generar Códigos QR de Asistencia y también Escanear para registrar tus marcas personales.',
+                        style: TextStyle(fontSize: 12, color: Color(0xFF6B21A8), fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          Center(
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF9333EA),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+              ),
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Comenzar', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
             ),
           ),
         ],
@@ -200,58 +301,100 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-          title: Text(
-            widget.target == ScanTarget.attendance
-                ? 'Ingreso de Hash QR (SHA-256)'
-                : 'Código de Designación',
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Pega el Hash SHA-256 emitido por el Administrador o Supervisor:',
-                style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+        builder: (ctx, setDialogState) {
+          final isDark = Theme.of(ctx).brightness == Brightness.dark;
+
+          return AlertDialog(
+            backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+            title: Text(
+              widget.target == ScanTarget.attendance
+                  ? 'Ingreso de Hash QR (SHA-256)'
+                  : 'Código de Designación',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white : const Color(0xFF0F172A),
               ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: textCtrl,
-                maxLines: 2,
-                decoration: InputDecoration(
-                  hintText: 'Pega el Hash SHA-256 aquí...',
-                  hintStyle: const TextStyle(fontSize: 12),
-                  filled: true,
-                  fillColor: const Color(0xFFF8FAFC),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Pega el Hash SHA-256 emitido por el Administrador o Supervisor:',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: textCtrl,
+                  maxLines: 2,
+                  style: TextStyle(
+                    color: isDark ? Colors.white : const Color(0xFF0F172A),
+                    fontSize: 13,
+                  ),
+                  decoration: InputDecoration(
+                    hintText: 'Pega el Hash SHA-256 aquí...',
+                    hintStyle: TextStyle(
+                      fontSize: 12,
+                      color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
+                    ),
+                    filled: true,
+                    fillColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(
+                        color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
+                      ),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(
+                        color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
+                      ),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(
+                        color: Color(0xFF16A34A),
+                        width: 1.8,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: Text(
+                  'Cancelar',
+                  style: TextStyle(
+                    color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                  ),
                 ),
               ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Cancelar'),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF16A34A),
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF16A34A),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                onPressed: () {
+                  final code = textCtrl.text.trim();
+                  if (code.isNotEmpty) {
+                    Navigator.of(ctx).pop();
+                    _handleBarcodeDetected(code);
+                  }
+                },
+                child: const Text('Validar Marca'),
               ),
-              onPressed: () {
-                final code = textCtrl.text.trim();
-                if (code.isNotEmpty) {
-                  Navigator.of(ctx).pop();
-                  _handleBarcodeDetected(code);
-                }
-              },
-              child: const Text('Validar Marca'),
-            ),
-          ],
-        ),
+            ],
+          );
+        },
       ),
     );
   }

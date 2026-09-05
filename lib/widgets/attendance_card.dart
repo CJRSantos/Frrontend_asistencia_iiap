@@ -46,12 +46,12 @@ class AttendanceCard extends StatelessWidget {
         ],
       ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Icono representativo
           Container(
-            width: 46,
-            height: 46,
+            width: 44,
+            height: 44,
             decoration: BoxDecoration(
               color: typeBg,
               borderRadius: BorderRadius.circular(12),
@@ -59,79 +59,127 @@ class AttendanceCard extends StatelessWidget {
             child: Icon(
               isCheckIn ? Icons.login_rounded : Icons.logout_rounded,
               color: typeColor,
-              size: 24,
+              size: 22,
             ),
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: 12),
 
           // Detalles de la marca
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // Fila Superior: Nombre del Usuario (si aplica) o Tipo + Hora, junto con el Badge de puntualidad
                 if (showUserName && record.userName != null) ...[
-                  Text(
-                    record.userName!,
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                      color: isDark ? Colors.white : const Color(0xFF0F172A),
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 2),
-                ],
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: typeBg,
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        record.type.label,
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          color: typeColor,
-                          letterSpacing: 0.5,
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          record.userName!,
+                          style: TextStyle(
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.bold,
+                            color: isDark ? Colors.white : const Color(0xFF0F172A),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      timeStr,
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: isDark ? Colors.white : const Color(0xFF0F172A),
+                      const SizedBox(width: 8),
+                      _buildPunctualityBadge(isDark),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: typeBg,
+                          borderRadius: BorderRadius.circular(5),
+                        ),
+                        child: Text(
+                          record.type.label,
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.bold,
+                            color: typeColor,
+                            letterSpacing: 0.4,
+                          ),
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          timeStr,
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: isDark ? Colors.white : const Color(0xFF0F172A),
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ] else ...[
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: typeBg,
+                          borderRadius: BorderRadius.circular(5),
+                        ),
+                        child: Text(
+                          record.type.label,
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.bold,
+                            color: typeColor,
+                            letterSpacing: 0.4,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          timeStr,
+                          style: TextStyle(
+                            fontSize: 14.5,
+                            fontWeight: FontWeight.w700,
+                            color: isDark ? Colors.white : const Color(0xFF0F172A),
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      _buildPunctualityBadge(isDark),
+                    ],
+                  ),
+                ],
+                const SizedBox(height: 5),
+                // Fecha y Supervisor
                 Row(
                   children: [
                     Icon(
                       Icons.calendar_today_outlined,
-                      size: 12,
+                      size: 11.5,
                       color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
                     ),
                     const SizedBox(width: 4),
                     Text(
                       dateStr,
                       style: TextStyle(
-                        fontSize: 12,
+                        fontSize: 11.5,
                         color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
                       ),
                     ),
                     if (record.markedByName != null) ...[
-                      const SizedBox(width: 10),
+                      const SizedBox(width: 8),
                       Icon(
                         Icons.verified_user_outlined,
-                        size: 12,
+                        size: 11.5,
                         color: isDark ? const Color(0xFF81C784) : const Color(0xFF2D5E2A),
                       ),
                       const SizedBox(width: 3),
@@ -152,32 +200,33 @@ class AttendanceCard extends StatelessWidget {
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
 
-          // Badge de puntualidad
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.check_circle,
-                  size: 12,
-                  color: isDark ? const Color(0xFF4ADE80) : const Color(0xFF16A34A),
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  record.status.label,
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
-                    color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569),
-                  ),
-                ),
-              ],
+  Widget _buildPunctualityBadge(bool isDark) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.check_circle,
+            size: 11,
+            color: isDark ? const Color(0xFF4ADE80) : const Color(0xFF16A34A),
+          ),
+          const SizedBox(width: 3),
+          Text(
+            record.status.label,
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569),
             ),
           ),
         ],
