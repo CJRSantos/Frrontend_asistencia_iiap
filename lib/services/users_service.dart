@@ -34,6 +34,15 @@ class UsersService {
     return UserModel.fromJson(response as Map<String, dynamic>);
   }
 
+  // Actualizar datos de cualquier colaborador (ADMIN o SUPERVISOR)
+  static Future<UserModel> updateUser(String id, Map<String, dynamic> data) async {
+    final response = await ApiClient.patch(
+      ApiConfig.userById(id),
+      body: data,
+    );
+    return UserModel.fromJson(response as Map<String, dynamic>);
+  }
+
   // Actualizar perfil del usuario conectado
   static Future<UserModel> updateProfile(Map<String, dynamic> data) async {
     final response = await ApiClient.patch(ApiConfig.usersMe, body: data);

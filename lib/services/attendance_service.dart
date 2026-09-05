@@ -77,4 +77,10 @@ class AttendanceService {
     }
     return [];
   }
+
+  // 8. Reinicio semanal del historial de asistencias (Solo ADMIN)
+  static Future<Map<String, dynamic>> clearWeeklyHistory() async {
+    final response = await ApiClient.delete(ApiConfig.attendanceWeeklyReset);
+    return response as Map<String, dynamic>;
+  }
 }

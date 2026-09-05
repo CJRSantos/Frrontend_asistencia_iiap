@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import '../../models/user_model.dart';
+import '../../models/schedule_model.dart';
 import '../../services/users_service.dart';
+import '../../services/storage_service.dart';
+import '../../services/schedule_service.dart';
+import '../../services/attendance_service.dart';
 import '../../services/api_client.dart';
 import '../qr/qr_display_screen.dart';
 
@@ -16,8 +20,8 @@ class _SupervisorsTabState extends State<SupervisorsTab> {
   int _activeSupervisorsCount = 0;
   int _maxSupervisors = 3;
   int _availableSlots = 3;
-  List<dynamic> _supervisorsList = [];
   List<UserModel> _allUsers = [];
+  String _searchQuery = '';
   String? _errorMessage;
 
   @override
@@ -32,27 +36,55 @@ class _SupervisorsTabState extends State<SupervisorsTab> {
       _errorMessage = null;
     });
 
+    final currentUser = StorageService.currentUser;
+    final isAdmin = currentUser?.isAdmin == true;
+
     try {
-      final supData = await UsersService.getSupervisors();
-      final usersData = await UsersService.findAll();
+      if (isAdmin) {
+        try {
+          final supData = await UsersService.getSupervisors();
+          final list = supData['supervisors'] is List ? (supData['supervisors'] as List) : [];
+          final totalCount = (supData['total'] is int)
+              ? supData['total'] as int
+              : (supData['current_count'] is int ? supData['current_count'] as int : list.length);
+          final maxSup = (supData['max_limit'] is int)
+              ? supData['max_limit'] as int
+              : (supData['max_supervisors'] is int ? supData['max_supervisors'] as int : 3);
+          final avail = (supData['available_slots'] is int)
+              ? supData['available_slots'] as int
+              : (maxSup - totalCount).clamp(0, maxSup);
 
-      if (mounted) {
-        final list = supData['supervisors'] is List ? (supData['supervisors'] as List) : [];
-        final totalCount = (supData['total'] is int)
-            ? supData['total'] as int
-            : (supData['current_count'] is int ? supData['current_count'] as int : list.length);
-        final maxSup = (supData['max_limit'] is int)
-            ? supData['max_limit'] as int
-            : (supData['max_supervisors'] is int ? supData['max_supervisors'] as int : 3);
-        final avail = (supData['available_slots'] is int)
-            ? supData['available_slots'] as int
-            : (maxSup - totalCount).clamp(0, maxSup);
-
-        setState(() {
-          _supervisorsList = list;
           _activeSupervisorsCount = totalCount;
           _maxSupervisors = maxSup;
           _availableSlots = avail;
+        } catch (_) {}
+      }
+
+      List<UserModel> usersData = [];
+      try {
+        usersData = await UsersService.findAll();
+      } catch (_) {
+        // En caso de que el usuario sea supervisor y el endpoint general requiera admin,
+        // extraemos el directorio de colaboradores desde los registros institucionales
+        try {
+          final records = await AttendanceService.getAllRecords();
+          final Map<String, UserModel> map = {};
+          for (final r in records) {
+            if (r.userId.isNotEmpty && !map.containsKey(r.userId)) {
+              map[r.userId] = UserModel(
+                id: r.userId,
+                email: r.userEmail ?? '',
+                fullName: r.userName ?? 'Colaborador',
+                role: UserRole.EMPLOYEE,
+              );
+            }
+          }
+          usersData = map.values.toList();
+        } catch (_) {}
+      }
+
+      if (mounted) {
+        setState(() {
           _allUsers = usersData;
           _isLoading = false;
         });
@@ -67,7 +99,7 @@ class _SupervisorsTabState extends State<SupervisorsTab> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          _errorMessage = 'Error al cargar supervisores: $e';
+          _errorMessage = 'Error al cargar personal: $e';
           _isLoading = false;
         });
       }
@@ -81,7 +113,7 @@ class _SupervisorsTabState extends State<SupervisorsTab> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Revocar Cargo de Supervisor'),
         content: Text(
-          '¿Estás seguro de que deseas revocar a $name? Volverá a ser usuario regular (EMPLOYEE).',
+          '¿Estás seguro de que deseas revocar a $name? Volverá a ser usuario regular (Personal).',
         ),
         actions: [
           TextButton(
@@ -117,16 +149,497 @@ class _SupervisorsTabState extends State<SupervisorsTab> {
     }
   }
 
+  void _openScheduleDialog(UserModel user) {
+    final currentSchedule = ScheduleService.getSchedule(user.id, position: user.position);
+    ScheduleType selectedType = currentSchedule.type;
+    int checkInH = currentSchedule.checkInHour;
+    int checkInM = currentSchedule.checkInMinute;
+    int checkOutH = currentSchedule.checkOutHour;
+    int checkOutM = currentSchedule.checkOutMinute;
+    int tolerance = currentSchedule.toleranceMinutes;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) {
+          final isDark = Theme.of(ctx).brightness == Brightness.dark;
+
+          void updatePreset(ScheduleType type) {
+            final def = ScheduleModel.defaultForType(userId: user.id, type: type);
+            setSheetState(() {
+              selectedType = type;
+              checkInH = def.checkInHour;
+              checkInM = def.checkInMinute;
+              checkOutH = def.checkOutHour;
+              checkOutM = def.checkOutMinute;
+              tolerance = def.toleranceMinutes;
+            });
+          }
+
+          Future<void> pickCheckInTime() async {
+            final picked = await showTimePicker(
+              context: ctx,
+              initialTime: TimeOfDay(hour: checkInH, minute: checkInM),
+            );
+            if (picked != null) {
+              setSheetState(() {
+                checkInH = picked.hour;
+                checkInM = picked.minute;
+                selectedType = ScheduleType.personalizado;
+              });
+            }
+          }
+
+          Future<void> pickCheckOutTime() async {
+            final picked = await showTimePicker(
+              context: ctx,
+              initialTime: TimeOfDay(hour: checkOutH, minute: checkOutM),
+            );
+            if (picked != null) {
+              setSheetState(() {
+                checkOutH = picked.hour;
+                checkOutM = picked.minute;
+                selectedType = ScheduleType.personalizado;
+              });
+            }
+          }
+
+          return Container(
+            padding: EdgeInsets.fromLTRB(20, 16, 20, MediaQuery.of(ctx).viewInsets.bottom + 24),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF1E293B) : Colors.white,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Barra de agarre
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF475569) : const Color(0xFFCBD5E1),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF2D5E2A).withValues(alpha: 0.12),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.access_time_filled_rounded, color: Color(0xFF2D5E2A), size: 24),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Asignar Horario y Turno',
+                              style: TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.bold,
+                                color: isDark ? Colors.white : const Color(0xFF0F172A),
+                              ),
+                            ),
+                            Text(
+                              user.fullName,
+                              style: const TextStyle(fontSize: 13, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Sección Modalidad y Turno
+                  Text(
+                    'MODALIDAD Y TURNO LABORAL',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.6,
+                      color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+
+                  // Lista de opciones preestablecidas
+                  _buildPresetTile(
+                    title: 'Turno Dinámico / Flexible',
+                    subtitle: 'Se determina automáticamente por su asistencia diaria (Mañana, Tarde o Completo)',
+                    type: ScheduleType.flexible,
+                    isSelected: selectedType == ScheduleType.flexible,
+                    isDark: isDark,
+                    onTap: () => updatePreset(ScheduleType.flexible),
+                  ),
+                  const SizedBox(height: 8),
+                  _buildPresetTile(
+                    title: 'Contratado / Permanente',
+                    subtitle: 'Turno Completo • 08:00 AM a 05:00 PM',
+                    type: ScheduleType.contratado,
+                    isSelected: selectedType == ScheduleType.contratado || selectedType == ScheduleType.permanente,
+                    isDark: isDark,
+                    onTap: () => updatePreset(ScheduleType.contratado),
+                  ),
+                  const SizedBox(height: 8),
+                  _buildPresetTile(
+                    title: 'Voluntario (Turno Mañana)',
+                    subtitle: '08:00 AM a 01:00 PM',
+                    type: ScheduleType.voluntarioManana,
+                    isSelected: selectedType == ScheduleType.voluntarioManana,
+                    isDark: isDark,
+                    onTap: () => updatePreset(ScheduleType.voluntarioManana),
+                  ),
+                  const SizedBox(height: 8),
+                  _buildPresetTile(
+                    title: 'Voluntario (Turno Tarde)',
+                    subtitle: '02:00 PM a 07:00 PM',
+                    type: ScheduleType.voluntarioTarde,
+                    isSelected: selectedType == ScheduleType.voluntarioTarde,
+                    isDark: isDark,
+                    onTap: () => updatePreset(ScheduleType.voluntarioTarde),
+                  ),
+                  const SizedBox(height: 8),
+                  _buildPresetTile(
+                    title: 'Practicante (Turno Mañana)',
+                    subtitle: '08:00 AM a 01:00 PM',
+                    type: ScheduleType.practicanteManana,
+                    isSelected: selectedType == ScheduleType.practicanteManana,
+                    isDark: isDark,
+                    onTap: () => updatePreset(ScheduleType.practicanteManana),
+                  ),
+                  const SizedBox(height: 8),
+                  _buildPresetTile(
+                    title: 'Practicante (Turno Tarde)',
+                    subtitle: '02:00 PM a 07:00 PM',
+                    type: ScheduleType.practicanteTarde,
+                    isSelected: selectedType == ScheduleType.practicanteTarde,
+                    isDark: isDark,
+                    onTap: () => updatePreset(ScheduleType.practicanteTarde),
+                  ),
+                  const SizedBox(height: 8),
+                  _buildPresetTile(
+                    title: 'Horario Personalizado',
+                    subtitle: 'Ajustar horas libremente',
+                    type: ScheduleType.personalizado,
+                    isSelected: selectedType == ScheduleType.personalizado,
+                    isDark: isDark,
+                    onTap: () => updatePreset(ScheduleType.personalizado),
+                  ),
+
+                  const SizedBox(height: 18),
+
+                  // Visualización y selección manual de horas
+                  Row(
+                    children: [
+                      Expanded(
+                        child: InkWell(
+                          onTap: pickCheckInTime,
+                          borderRadius: BorderRadius.circular(12),
+                          child: Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Hora Entrada', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                                const SizedBox(height: 4),
+                                Row(
+                                  children: [
+                                    const Icon(Icons.login_rounded, size: 16, color: Color(0xFF16A34A)),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      '${checkInH.toString().padLeft(2, '0')}:${checkInM.toString().padLeft(2, '0')}',
+                                      style: TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.bold,
+                                        color: isDark ? Colors.white : const Color(0xFF0F172A),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: InkWell(
+                          onTap: pickCheckOutTime,
+                          borderRadius: BorderRadius.circular(12),
+                          child: Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Hora Salida', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                                const SizedBox(height: 4),
+                                Row(
+                                  children: [
+                                    const Icon(Icons.logout_rounded, size: 16, color: Color(0xFFD97706)),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      '${checkOutH.toString().padLeft(2, '0')}:${checkOutM.toString().padLeft(2, '0')}',
+                                      style: TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.bold,
+                                        color: isDark ? Colors.white : const Color(0xFF0F172A),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // Tolerancia de Ingreso
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Tolerancia de ingreso:',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF2D5E2A).withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          '$tolerance minutos',
+                          style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF2D5E2A), fontSize: 13),
+                        ),
+                      ),
+                    ],
+                  ),
+                  Slider(
+                    value: tolerance.toDouble(),
+                    min: 0,
+                    max: 30,
+                    divisions: 6,
+                    activeColor: const Color(0xFF2D5E2A),
+                    onChanged: (val) {
+                      setSheetState(() => tolerance = val.toInt());
+                    },
+                  ),
+
+                  const SizedBox(height: 14),
+
+                  // Botón de Confirmación
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF2D5E2A),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        elevation: 0,
+                      ),
+                      onPressed: () async {
+                        final updatedSchedule = ScheduleModel(
+                          userId: user.id,
+                          type: selectedType,
+                          checkInHour: checkInH,
+                          checkInMinute: checkInM,
+                          checkOutHour: checkOutH,
+                          checkOutMinute: checkOutM,
+                          toleranceMinutes: tolerance,
+                          updatedAt: DateTime.now(),
+                          updatedByName: StorageService.currentUser?.fullName,
+                        );
+
+                        final messenger = ScaffoldMessenger.of(context);
+                        await ScheduleService.saveSchedule(updatedSchedule);
+
+                        if (ctx.mounted) {
+                          Navigator.of(ctx).pop();
+                        }
+                        if (mounted) {
+                          messenger.showSnackBar(
+                            SnackBar(
+                              content: Row(
+                                children: [
+                                  const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      'Horario actualizado para ${user.fullName}:\n${updatedSchedule.fullLabel} (Tol: $tolerance min)',
+                                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              backgroundColor: const Color(0xFF15803D),
+                              behavior: SnackBarBehavior.floating,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                          );
+                        }
+                      },
+                      child: const Text(
+                        'Guardar Horario',
+                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildPresetTile({
+    required String title,
+    required String subtitle,
+    required ScheduleType type,
+    required bool isSelected,
+    required bool isDark,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? (isDark ? const Color(0xFF14532D).withValues(alpha: 0.4) : const Color(0xFFDCFCE7))
+              : (isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC)),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected
+                ? const Color(0xFF2D5E2A)
+                : (isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+            width: isSelected ? 1.8 : 1.0,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              isSelected ? Icons.radio_button_checked_rounded : Icons.radio_button_off_rounded,
+              color: isSelected ? const Color(0xFF2D5E2A) : const Color(0xFF94A3B8),
+              size: 20,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                      color: isDark ? Colors.white : const Color(0xFF0F172A),
+                    ),
+                  ),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Color _getScheduleBadgeBg(ScheduleType type, bool isDark) {
+    switch (type) {
+      case ScheduleType.flexible:
+        return isDark ? const Color(0xFF064E3B).withValues(alpha: 0.35) : const Color(0xFFD1FAE5);
+      case ScheduleType.contratado:
+      case ScheduleType.permanente:
+        return isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.3) : const Color(0xFFDBEAFE);
+      case ScheduleType.voluntarioManana:
+      case ScheduleType.voluntarioTarde:
+        return isDark ? const Color(0xFF78350F).withValues(alpha: 0.3) : const Color(0xFFFEF3C7);
+      case ScheduleType.practicanteManana:
+      case ScheduleType.practicanteTarde:
+        return isDark ? const Color(0xFF581C87).withValues(alpha: 0.3) : const Color(0xFFF3E8FF);
+      case ScheduleType.personalizado:
+        return isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9);
+    }
+  }
+
+  Color _getScheduleBadgeTextColor(ScheduleType type, bool isDark) {
+    switch (type) {
+      case ScheduleType.flexible:
+        return isDark ? const Color(0xFF6EE7B7) : const Color(0xFF047857);
+      case ScheduleType.contratado:
+      case ScheduleType.permanente:
+        return isDark ? const Color(0xFF93C5FD) : const Color(0xFF1D4ED8);
+      case ScheduleType.voluntarioManana:
+      case ScheduleType.voluntarioTarde:
+        return isDark ? const Color(0xFFFCD34D) : const Color(0xFFB45309);
+      case ScheduleType.practicanteManana:
+      case ScheduleType.practicanteTarde:
+        return isDark ? const Color(0xFFD8B4FE) : const Color(0xFF7E22CE);
+      case ScheduleType.personalizado:
+        return isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
+    final currentUser = StorageService.currentUser;
+    final isAdmin = currentUser?.isAdmin == true;
+
+    final filteredUsers = _allUsers.where((u) {
+      if (_searchQuery.isEmpty) return true;
+      final query = _searchQuery.toLowerCase();
+      return u.fullName.toLowerCase().contains(query) || u.email.toLowerCase().contains(query);
+    }).toList();
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'Gestión de Supervisores y Personal',
-          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+        title: Text(
+          isAdmin ? 'Gestión de Personal y Horarios' : 'Control de Horarios de Personal',
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
         ),
         actions: [
           IconButton(
@@ -156,33 +669,33 @@ class _SupervisorsTabState extends State<SupervisorsTab> {
               : RefreshIndicator(
                   onRefresh: _loadData,
                   child: ListView(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
                     children: [
-                      // Tarjeta de Cupos de Supervisores
-                      Container(
-                        padding: const EdgeInsets.all(20),
-                        decoration: BoxDecoration(
-                          color: isDark ? const Color(0xFF1E293B) : Colors.white,
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                            color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: isDark ? 0.25 : 0.04),
-                              blurRadius: 10,
-                              offset: const Offset(0, 3),
+                      // Tarjeta de Cupos de Supervisores (SOLO ADMIN)
+                      if (isAdmin) ...[
+                        Container(
+                          padding: const EdgeInsets.all(18),
+                          decoration: BoxDecoration(
+                            color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
                             ),
-                          ],
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Expanded(
-                                  child: Row(
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: isDark ? 0.25 : 0.04),
+                                blurRadius: 10,
+                                offset: const Offset(0, 3),
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Row(
                                     children: [
                                       Container(
                                         padding: const EdgeInsets.all(10),
@@ -193,253 +706,294 @@ class _SupervisorsTabState extends State<SupervisorsTab> {
                                         child: const Icon(Icons.shield_rounded, color: Color(0xFF9333EA), size: 24),
                                       ),
                                       const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            const Text(
-                                              'Cupos de Supervisores',
-                                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                                            ),
-                                            Text(
-                                              'Límite institucional estricto: 3',
-                                              style: TextStyle(
-                                                fontSize: 12,
-                                                color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                  decoration: BoxDecoration(
-                                    color: _availableSlots > 0
-                                        ? const Color(0xFFDCFCE7)
-                                        : const Color(0xFFFEE2E2),
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Text(
-                                    '$_activeSupervisorsCount / $_maxSupervisors',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 14,
-                                      color: _availableSlots > 0
-                                          ? const Color(0xFF16A34A)
-                                          : const Color(0xFFDC2626),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 16),
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
-                              child: LinearProgressIndicator(
-                                value: _activeSupervisorsCount / _maxSupervisors,
-                                minHeight: 8,
-                                backgroundColor: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
-                                valueColor: AlwaysStoppedAnimation<Color>(
-                                  _availableSlots > 0 ? const Color(0xFF9333EA) : const Color(0xFFDC2626),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            SizedBox(
-                              width: double.infinity,
-                              child: ElevatedButton.icon(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF9333EA),
-                                  foregroundColor: Colors.white,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                  padding: const EdgeInsets.symmetric(vertical: 12),
-                                ),
-                                onPressed: _availableSlots > 0
-                                    ? () {
-                                        Navigator.of(context).push(
-                                          MaterialPageRoute(
-                                            builder: (_) => const QrDisplayScreen(
-                                              mode: QrMode.supervisorAssignment,
+                                      Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          const Text(
+                                            'Cupos de Supervisores',
+                                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                                          ),
+                                          Text(
+                                            'Disponibles: $_availableSlots de $_maxSupervisors',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
                                             ),
                                           ),
-                                        );
-                                      }
-                                    : null,
-                                icon: const Icon(Icons.qr_code_rounded, size: 20),
-                                label: Text(
-                                  _availableSlots > 0
-                                      ? 'Generar QR para Nombrar Supervisor'
-                                      : 'Límite de 3 Supervisores Alcanzado',
-                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-
-                      const SizedBox(height: 24),
-
-                      // Lista de Supervisores Activos
-                      const Text(
-                        'Supervisores Activos Designados',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 10),
-
-                      if (_supervisorsList.isEmpty)
-                        Container(
-                          padding: const EdgeInsets.all(20),
-                          decoration: BoxDecoration(
-                            color: isDark ? const Color(0xFF1E293B) : Colors.white,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
-                            ),
-                          ),
-                          child: const Center(
-                            child: Text(
-                              'Aún no hay supervisores designados. Puedes generar un QR para que un colaborador ascienda.',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(fontSize: 13, color: Color(0xFF64748B)),
-                            ),
-                          ),
-                        )
-                      else
-                        ..._supervisorsList.map((s) {
-                          final id = s['id']?.toString() ?? '';
-                          final name = s['full_name']?.toString() ?? 'Sin nombre';
-                          final email = s['email']?.toString() ?? '';
-                          final position = s['position']?.toString() ?? 'Supervisor';
-
-                          return Container(
-                            margin: const EdgeInsets.only(bottom: 10),
-                            padding: const EdgeInsets.all(14),
-                            decoration: BoxDecoration(
-                              color: isDark ? const Color(0xFF1E293B) : Colors.white,
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(
-                                color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
-                              ),
-                            ),
-                            child: Row(
-                              children: [
-                                CircleAvatar(
-                                  backgroundColor: const Color(0xFF9333EA).withValues(alpha: 0.15),
-                                  child: const Icon(Icons.shield_rounded, color: Color(0xFF9333EA), size: 20),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        name,
-                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                                      ),
-                                      Text(
-                                        email,
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
-                                        ),
-                                      ),
-                                      Text(
-                                        position,
-                                        style: const TextStyle(fontSize: 11, color: Color(0xFF9333EA)),
+                                        ],
                                       ),
                                     ],
                                   ),
-                                ),
-                                IconButton(
-                                  icon: const Icon(Icons.person_remove_rounded, color: Color(0xFFEF4444)),
-                                  tooltip: 'Revocar cargo',
-                                  onPressed: () => _confirmRevoke(id, name),
-                                ),
-                              ],
-                            ),
-                          );
-                        }),
-
-                      const SizedBox(height: 24),
-
-                      // Directorio General de Usuarios en BD
-                      Text(
-                        'Directorio Institucional en BD (${_allUsers.length})',
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 10),
-
-                      ..._allUsers.map((u) {
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                          decoration: BoxDecoration(
-                            color: isDark ? const Color(0xFF1E293B) : Colors.white,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              CircleAvatar(
-                                radius: 18,
-                                backgroundColor: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
-                                child: Text(
-                                  u.fullName.isNotEmpty ? u.fullName[0].toUpperCase() : 'U',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: isDark ? Colors.white : const Color(0xFF2D5E2A),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      u.fullName,
-                                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                    decoration: BoxDecoration(
+                                      color: _availableSlots > 0 ? const Color(0xFFDCFCE7) : const Color(0xFFFEE2E2),
+                                      borderRadius: BorderRadius.circular(20),
                                     ),
-                                    Text(
-                                      u.email,
+                                    child: Text(
+                                      '$_activeSupervisorsCount / $_maxSupervisors',
                                       style: TextStyle(
-                                        fontSize: 11,
-                                        color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                                        fontWeight: FontWeight.bold,
+                                        color: _availableSlots > 0 ? const Color(0xFF16A34A) : const Color(0xFFDC2626),
+                                        fontSize: 13,
                                       ),
                                     ),
-                                  ],
-                                ),
-                              ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                decoration: BoxDecoration(
-                                  color: u.isAdmin
-                                      ? const Color(0xFFFEE2E2)
-                                      : (u.isSupervisor ? const Color(0xFFF3E8FF) : const Color(0xFFDCFCE7)),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: Text(
-                                  u.role.name,
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold,
-                                    color: u.isAdmin
-                                        ? const Color(0xFFDC2626)
-                                        : (u.isSupervisor ? const Color(0xFF9333EA) : const Color(0xFF16A34A)),
                                   ),
+                                ],
+                              ),
+                              const SizedBox(height: 14),
+                              SizedBox(
+                                width: double.infinity,
+                                child: ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF9333EA),
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                  ),
+                                  icon: const Icon(Icons.qr_code_rounded, size: 20),
+                                  label: const Text(
+                                    'Designar Nuevo Supervisor con QR',
+                                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                  ),
+                                  onPressed: _availableSlots > 0
+                                      ? () {
+                                          Navigator.of(context).push(
+                                            MaterialPageRoute(
+                                              builder: (_) => const QrDisplayScreen(mode: QrMode.supervisorAssignment),
+                                            ),
+                                          );
+                                        }
+                                      : null,
                                 ),
                               ),
                             ],
                           ),
-                        );
-                      }),
+                        ),
+                        const SizedBox(height: 20),
+                      ],
+
+                      // Barra de Búsqueda de Personal
+                      Container(
+                        decoration: BoxDecoration(
+                          color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                        ),
+                        child: TextField(
+                          onChanged: (val) => setState(() => _searchQuery = val.trim()),
+                          style: TextStyle(fontSize: 14, color: isDark ? Colors.white : const Color(0xFF0F172A)),
+                          decoration: InputDecoration(
+                            hintText: 'Buscar personal por nombre o correo...',
+                            hintStyle: TextStyle(fontSize: 13, color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8)),
+                            prefixIcon: Icon(Icons.search_rounded, size: 20, color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8)),
+                            border: InputBorder.none,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 18),
+
+                      // Encabezado de la lista
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Nómina y Horarios Asignados (${filteredUsers.length})',
+                              style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Toca para editar',
+                            style: TextStyle(fontSize: 11, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+
+                      // Lista reactiva de colaboradores con horarios
+                      ValueListenableBuilder<Map<String, ScheduleModel>>(
+                        valueListenable: ScheduleService.schedulesNotifier,
+                        builder: (context, schedulesMap, _) {
+                          if (filteredUsers.isEmpty) {
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 30),
+                              child: Center(
+                                child: Text(
+                                  _searchQuery.isEmpty
+                                      ? 'No se encontraron colaboradores registrados.'
+                                      : 'No hay resultados para "$_searchQuery"',
+                                  style: TextStyle(color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                                ),
+                              ),
+                            );
+                          }
+
+                          return Column(
+                            children: filteredUsers.map((u) {
+                              final schedule = ScheduleService.getSchedule(u.id, position: u.position);
+                              final badgeBg = _getScheduleBadgeBg(schedule.type, isDark);
+                              final badgeTextColor = _getScheduleBadgeTextColor(schedule.type, isDark);
+
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 10),
+                                decoration: BoxDecoration(
+                                  color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.03),
+                                      blurRadius: 6,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
+                                child: Material(
+                                  color: Colors.transparent,
+                                  child: InkWell(
+                                    borderRadius: BorderRadius.circular(16),
+                                    onTap: () => _openScheduleDialog(u),
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(14),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              CircleAvatar(
+                                                radius: 19,
+                                                backgroundColor: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                                                child: Text(
+                                                  u.fullName.isNotEmpty ? u.fullName[0].toUpperCase() : 'U',
+                                                  style: TextStyle(
+                                                    fontWeight: FontWeight.bold,
+                                                    color: isDark ? Colors.white : const Color(0xFF2D5E2A),
+                                                  ),
+                                                ),
+                                              ),
+                                              const SizedBox(width: 12),
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  children: [
+                                                    Text(
+                                                      u.fullName,
+                                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5),
+                                                      maxLines: 1,
+                                                      overflow: TextOverflow.ellipsis,
+                                                    ),
+                                                    Text(
+                                                      u.email,
+                                                      style: TextStyle(
+                                                        fontSize: 11.5,
+                                                        color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                                                      ),
+                                                      maxLines: 1,
+                                                      overflow: TextOverflow.ellipsis,
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              // Badge de Rol
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                                                decoration: BoxDecoration(
+                                                  color: u.isAdmin
+                                                      ? const Color(0xFFFEE2E2)
+                                                      : (u.isSupervisor ? const Color(0xFFF3E8FF) : const Color(0xFFDCFCE7)),
+                                                  borderRadius: BorderRadius.circular(6),
+                                                ),
+                                                child: Text(
+                                                  u.role.name,
+                                                  style: TextStyle(
+                                                    fontSize: 10,
+                                                    fontWeight: FontWeight.bold,
+                                                    color: u.isAdmin
+                                                        ? const Color(0xFFDC2626)
+                                                        : (u.isSupervisor ? const Color(0xFF9333EA) : const Color(0xFF16A34A)),
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 10),
+                                          const Divider(height: 1),
+                                          const SizedBox(height: 10),
+
+                                          // Fila del Horario Asignado
+                                          Row(
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              Expanded(
+                                                child: Row(
+                                                  children: [
+                                                    Icon(Icons.schedule_rounded, size: 16, color: badgeTextColor),
+                                                    const SizedBox(width: 6),
+                                                    Expanded(
+                                                      child: Container(
+                                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                                        decoration: BoxDecoration(
+                                                          color: badgeBg,
+                                                          borderRadius: BorderRadius.circular(6),
+                                                        ),
+                                                        child: Text(
+                                                          '${schedule.fullLabel} • Tol: ${schedule.toleranceMinutes}m',
+                                                          style: TextStyle(
+                                                            fontSize: 11,
+                                                            fontWeight: FontWeight.w600,
+                                                            color: badgeTextColor,
+                                                          ),
+                                                          maxLines: 1,
+                                                          overflow: TextOverflow.ellipsis,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              TextButton.icon(
+                                                style: TextButton.styleFrom(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                                  visualDensity: VisualDensity.compact,
+                                                ),
+                                                icon: const Icon(Icons.edit_calendar_rounded, size: 15, color: Color(0xFF2D5E2A)),
+                                                label: const Text(
+                                                  'Horario',
+                                                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF2D5E2A)),
+                                                ),
+                                                onPressed: () => _openScheduleDialog(u),
+                                              ),
+                                              if (isAdmin && u.isSupervisor) ...[
+                                                const SizedBox(width: 4),
+                                                IconButton(
+                                                  icon: const Icon(Icons.person_remove_rounded, color: Color(0xFFEF4444), size: 18),
+                                                  tooltip: 'Revocar cargo de supervisor',
+                                                  visualDensity: VisualDensity.compact,
+                                                  onPressed: () => _confirmRevoke(u.id, u.fullName),
+                                                ),
+                                              ],
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }).toList(),
+                          );
+                        },
+                      ),
                     ],
                   ),
                 ),

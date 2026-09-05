@@ -18,6 +18,8 @@ class _AttendanceTabState extends State<AttendanceTab> with SingleTickerProvider
   List<AttendanceModel> _allRecords = [];
   bool _isLoadingMy = true;
   bool _isLoadingAll = false;
+  bool _hasFetchedMy = false;
+  bool _hasFetchedAll = false;
 
   @override
   void initState() {
@@ -48,10 +50,16 @@ class _AttendanceTabState extends State<AttendanceTab> with SingleTickerProvider
         setState(() {
           _myRecords = records;
           _isLoadingMy = false;
+          _hasFetchedMy = true;
         });
       }
     } catch (_) {
-      if (mounted) setState(() => _isLoadingMy = false);
+      if (mounted) {
+        setState(() {
+          _isLoadingMy = false;
+          _hasFetchedMy = true;
+        });
+      }
     }
   }
 
@@ -63,10 +71,78 @@ class _AttendanceTabState extends State<AttendanceTab> with SingleTickerProvider
         setState(() {
           _allRecords = records;
           _isLoadingAll = false;
+          _hasFetchedAll = true;
         });
       }
     } catch (_) {
-      if (mounted) setState(() => _isLoadingAll = false);
+      if (mounted) {
+        setState(() {
+          _isLoadingAll = false;
+          _hasFetchedAll = true;
+        });
+      }
+    }
+  }
+
+  Future<void> _confirmWeeklyReset() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.cleaning_services_rounded, color: Colors.orange),
+            SizedBox(width: 10),
+            Expanded(child: Text('Reinicio Semanal', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
+          ],
+        ),
+        content: const Text(
+          'El sistema reinicia automáticamente todo el historial de asistencias los viernes a las 10:00 PM para evitar saturar la base de datos y la aplicación para todos (admin, supervisores y personal).\n\n¿Deseas ejecutar un reinicio manual en este momento?',
+          style: TextStyle(fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Reiniciar Ahora'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Reiniciando historial semanal...')),
+      );
+      try {
+        final res = await AttendanceService.clearWeeklyHistory();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: Colors.green,
+              content: Text(res['message']?.toString() ?? 'Historial semanal reiniciado exitosamente.'),
+            ),
+          );
+          _loadAllRecords();
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: Colors.red,
+              content: Text('Error al reiniciar historial: $e'),
+            ),
+          );
+        }
+      }
     }
   }
 
@@ -88,6 +164,11 @@ class _AttendanceTabState extends State<AttendanceTab> with SingleTickerProvider
               title: const Text('Registro Institucional', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
               actions: [
                 IconButton(
+                  icon: const Icon(Icons.cleaning_services_rounded),
+                  tooltip: 'Reinicio Semanal (Viernes 10:00 PM)',
+                  onPressed: _confirmWeeklyReset,
+                ),
+                IconButton(
                   icon: const Icon(Icons.refresh_rounded),
                   tooltip: 'Actualizar',
                   onPressed: _loadAllRecords,
@@ -100,7 +181,7 @@ class _AttendanceTabState extends State<AttendanceTab> with SingleTickerProvider
 
         // 2. Colaborador Regular: Solo su propio historial de asistencias
         if (!isSupervisor) {
-          if (_myRecords.isEmpty && !_isLoadingMy) {
+          if (!_hasFetchedMy && !_isLoadingMy) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (mounted) _loadMyRecords();
             });
@@ -123,7 +204,7 @@ class _AttendanceTabState extends State<AttendanceTab> with SingleTickerProvider
         // 3. Supervisor: Tiene sus marcas personales y el registro institucional general
         if (_tabController == null) {
           _tabController = TabController(length: 2, vsync: this);
-          if (_allRecords.isEmpty && !_isLoadingAll) {
+          if (!_hasFetchedAll && !_isLoadingAll) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (mounted) _loadAllRecords();
             });

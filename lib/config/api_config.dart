@@ -46,6 +46,7 @@ class ApiConfig {
   static String get usersMe => '$baseUrl/users/me';
   static String get usersAll => '$baseUrl/users';
   static String get usersSupervisors => '$baseUrl/users/supervisors';
+  static String userById(String id) => '$baseUrl/users/$id';
   static String userRevokeSupervisor(String id) => '$baseUrl/users/supervisors/$id';
   static String userRole(String id) => '$baseUrl/users/$id/role';
   static String get uploadPhotoBase64 => '$baseUrl/users/me/photo-base64';
@@ -58,5 +59,6 @@ class ApiConfig {
   static String get attendanceMyRecords => '$baseUrl/attendance/my-records';
   static String get attendanceToday => '$baseUrl/attendance/today';
   static String get attendanceAll => '$baseUrl/attendance/all';
+  static String get attendanceWeeklyReset => '$baseUrl/attendance/weekly-reset';
 }
 

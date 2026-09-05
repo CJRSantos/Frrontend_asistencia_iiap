@@ -125,11 +125,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       valueListenable: StorageService.currentUserNotifier,
       builder: (context, user, _) {
         final isAdmin = user?.isAdmin == true;
+        final canManageStaff = user?.canManageAttendanceQr == true;
 
         final List<Widget> pages = [
           DashboardTab(onNavigateToHistory: () => setState(() => _currentIndex = 1)),
           const AttendanceTab(),
-          if (isAdmin) const SupervisorsTab(),
+          if (canManageStaff) const SupervisorsTab(),
           const ProfileTab(),
         ];
 
@@ -144,11 +145,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             selectedIcon: Icon(Icons.access_time_filled_rounded),
             label: 'Asistencias',
           ),
-          if (isAdmin)
-            const NavigationDestination(
-              icon: Icon(Icons.admin_panel_settings_outlined),
-              selectedIcon: Icon(Icons.admin_panel_settings_rounded),
-              label: 'Supervisores',
+          if (canManageStaff)
+            NavigationDestination(
+              icon: const Icon(Icons.groups_outlined),
+              selectedIcon: const Icon(Icons.groups_rounded),
+              label: isAdmin ? 'Personal' : 'Horarios',
             ),
           const NavigationDestination(
             icon: Icon(Icons.person_outline_rounded),

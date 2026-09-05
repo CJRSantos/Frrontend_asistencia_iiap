@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'config/api_config.dart';
 import 'services/theme_service.dart';
 import 'services/storage_service.dart';
+import 'services/schedule_service.dart';
 import 'screens/splash_gate_screen.dart';
 
 void main() async {
@@ -9,6 +10,7 @@ void main() async {
   await ThemeService.init();
   await ApiConfig.init();
   await StorageService.init();
+  await ScheduleService.init();
   runApp(const MyApp());
 }
 
