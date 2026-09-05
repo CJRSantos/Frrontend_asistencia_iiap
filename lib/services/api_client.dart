@@ -1,0 +1,127 @@
+import 'dart:convert';
+import 'dart:io';
+import 'package:http/http.dart' as http;
+import 'storage_service.dart';
+
+class ApiException implements Exception {
+  final String message;
+  final int statusCode;
+
+  ApiException(this.message, [this.statusCode = 400]);
+
+  @override
+  String toString() => message;
+}
+
+class ApiClient {
+  static Future<Map<String, String>> _headers({bool requiresAuth = true}) async {
+    final headers = <String, String>{
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    };
+
+    if (requiresAuth) {
+      final token = await StorageService.getToken();
+      if (token != null && token.isNotEmpty) {
+        headers['Authorization'] = 'Bearer $token';
+      }
+    }
+
+    return headers;
+  }
+
+  static dynamic _processResponse(http.Response response) {
+    dynamic body;
+    try {
+      body = jsonDecode(utf8.decode(response.bodyBytes));
+    } catch (_) {
+      body = null;
+    }
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return body;
+    }
+
+    String errorMessage = 'Ocurrió un error en el servidor (${response.statusCode})';
+    if (body is Map && body.containsKey('message')) {
+      final msg = body['message'];
+      if (msg is List) {
+        errorMessage = msg.join('\n');
+      } else if (msg != null) {
+        errorMessage = msg.toString();
+      }
+    }
+
+    if (response.statusCode == 401) {
+      // Sesión expirada o token inválido
+      StorageService.clearSession();
+      throw ApiException(errorMessage.isNotEmpty ? errorMessage : 'Sesión expirada. Por favor inicie sesión nuevamente.', 401);
+    }
+
+    throw ApiException(errorMessage, response.statusCode);
+  }
+
+  static Future<dynamic> get(String url, {bool requiresAuth = true}) async {
+    try {
+      final headers = await _headers(requiresAuth: requiresAuth);
+      final response = await http
+          .get(Uri.parse(url), headers: headers)
+          .timeout(const Duration(seconds: 15));
+      return _processResponse(response);
+    } on SocketException {
+      throw ApiException('No se pudo conectar con el servidor backend. Verifique que esté encendido.');
+    } on http.ClientException {
+      throw ApiException('Error de conexión con la red o el servidor.');
+    }
+  }
+
+  static Future<dynamic> post(String url, {Map<String, dynamic>? body, bool requiresAuth = true}) async {
+    try {
+      final headers = await _headers(requiresAuth: requiresAuth);
+      final response = await http
+          .post(
+            Uri.parse(url),
+            headers: headers,
+            body: body != null ? jsonEncode(body) : null,
+          )
+          .timeout(const Duration(seconds: 15));
+      return _processResponse(response);
+    } on SocketException {
+      throw ApiException('No se pudo conectar con el servidor backend. Verifique que esté encendido.');
+    } on http.ClientException {
+      throw ApiException('Error de conexión con la red o el servidor.');
+    }
+  }
+
+  static Future<dynamic> patch(String url, {Map<String, dynamic>? body, bool requiresAuth = true}) async {
+    try {
+      final headers = await _headers(requiresAuth: requiresAuth);
+      final response = await http
+          .patch(
+            Uri.parse(url),
+            headers: headers,
+            body: body != null ? jsonEncode(body) : null,
+          )
+          .timeout(const Duration(seconds: 15));
+      return _processResponse(response);
+    } on SocketException {
+      throw ApiException('No se pudo conectar con el servidor backend. Verifique que esté encendido.');
+    } on http.ClientException {
+      throw ApiException('Error de conexión con la red o el servidor.');
+    }
+  }
+
+  static Future<dynamic> delete(String url, {bool requiresAuth = true}) async {
+    try {
+      final headers = await _headers(requiresAuth: requiresAuth);
+      final response = await http
+          .delete(Uri.parse(url), headers: headers)
+          .timeout(const Duration(seconds: 15));
+      return _processResponse(response);
+    } on SocketException {
+      throw ApiException('No se pudo conectar con el servidor backend. Verifique que esté encendido.');
+    } on http.ClientException {
+      throw ApiException('Error de conexión con la red o el servidor.');
+    }
+  }
+}

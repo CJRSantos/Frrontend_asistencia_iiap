@@ -1,84 +1,62 @@
+import 'package:shared_preferences/shared_preferences.dart';
+
 class ApiConfig {
-  // Base URL for backend API.
-  // When running adb reverse tcp:3000 tcp:3000, http://localhost:3000/api works on physical Android device.
-  static const String baseUrl = 'http://localhost:3000/api';
+  static const String _customHostKey = 'custom_backend_host';
 
-  // Auth endpoints
-  static const String loginStep1 = '$baseUrl/auth/login/step-1';
-  static const String loginStep2 = '$baseUrl/auth/login/step-2';
-  static const String register = '$baseUrl/auth/register';
-  static const String meAuth = '$baseUrl/auth/me';
-  static const String googleAuth = '$baseUrl/auth/google';
-  static const String forgotPassword = '$baseUrl/auth/forgot-password';
-  static const String resetPassword = '$baseUrl/auth/reset-password';
-  static String verifyAccount(String token) => '$baseUrl/auth/verify/$token';
+  // Obtiene la URL base adecuada según el entorno de ejecución
+  static String get defaultBaseUrl {
+    // http://localhost:3000/api funciona en Windows, Web y en dispositivos Android conectados por USB con adb reverse
+    return 'http://127.0.0.1:3000/api';
+  }
 
-  // Users endpoints
-  static const String usersMe = '$baseUrl/users/me';
-  static const String users = '$baseUrl/users';
-  static String userById(String id) => '$baseUrl/users/$id';
+  static const String localWifiUrl = 'http://192.168.1.108:3000/api';
+  static const String androidEmulatorUrl = 'http://10.0.2.2:3000/api';
+
+
+  static String _currentBaseUrl = defaultBaseUrl;
+
+  static String get baseUrl => _currentBaseUrl;
+
+  static Future<void> init() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString(_customHostKey);
+    if (saved != null && saved.trim().isNotEmpty) {
+      _currentBaseUrl = saved.trim();
+    } else {
+      _currentBaseUrl = defaultBaseUrl;
+    }
+  }
+
+  static Future<void> setCustomBaseUrl(String url) async {
+    final trimmed = url.trim();
+    _currentBaseUrl = trimmed.isEmpty ? defaultBaseUrl : trimmed;
+    final prefs = await SharedPreferences.getInstance();
+    if (trimmed.isEmpty) {
+      await prefs.remove(_customHostKey);
+    } else {
+      await prefs.setString(_customHostKey, trimmed);
+    }
+  }
+
+  // Rutas de la API
+  static String get authRegister => '$baseUrl/auth/register';
+  static String get authLogin => '$baseUrl/auth/login';
+  static String get authMe => '$baseUrl/auth/me';
+
+  static String get usersMe => '$baseUrl/users/me';
+  static String get usersAll => '$baseUrl/users';
+  static String get usersSupervisors => '$baseUrl/users/supervisors';
+  static String userRevokeSupervisor(String id) => '$baseUrl/users/supervisors/$id';
   static String userRole(String id) => '$baseUrl/users/$id/role';
-  static const String userPhotoUpload = '$baseUrl/users/me/photo';
-  static const String userPhotoUploadBase64 = '$baseUrl/users/me/photo-base64';
+  static String get uploadPhotoBase64 => '$baseUrl/users/me/photo-base64';
 
-  // Attendance endpoints
-  static const String attendanceMark = '$baseUrl/attendance/mark';
-  static const String attendanceTodayStatus = '$baseUrl/attendance/today-status';
-  static const String attendanceMyHistory = '$baseUrl/attendance/my-history';
-  static const String attendanceClearMyHistory = '$baseUrl/attendance/clear-my-history';
-  static const String attendanceHistory = '$baseUrl/attendance/history';
-
-  // Historial (Audit Trail)
-  static const String historialMe = '$baseUrl/historial/me';
-  static const String historialAll = '$baseUrl/historial';
-
-  // Schedules endpoints
-  static const String schedules = '$baseUrl/schedules';
-  static String schedulesByUser(String userId) => '$baseUrl/schedules/user/$userId';
-  static String scheduleById(String id) => '$baseUrl/schedules/$id';
-
-  // Projects endpoints
-  static const String projects = '$baseUrl/projects';
-  static String projectById(String id) => '$baseUrl/projects/$id';
-
-  // Delegations endpoints
-  static const String delegations = '$baseUrl/delegations';
-  static String deactivateDelegation(String id) => '$baseUrl/delegations/$id/deactivate';
-
-  // Institutions (Sedes) endpoints
-  static const String institutions = '$baseUrl/institutions';
-  static String institutionById(String id) => '$baseUrl/institutions/$id';
-
-  // Events endpoints
-  static const String events = '$baseUrl/events';
-  static String eventById(String id) => '$baseUrl/events/$id';
-
-  // Resources endpoints
-  static const String resources = '$baseUrl/resources';
-  static String resourceById(String id) => '$baseUrl/resources/$id';
-
-  // Birthdays endpoints
-  static const String birthdaysUpcoming = '$baseUrl/birthdays/upcoming';
-  static const String birthdaysToday = '$baseUrl/birthdays/today';
-  static const String birthdaysCalendar = '$baseUrl/birthdays';
-
-  // Courses endpoints
-  static const String courses = '$baseUrl/courses';
-  static String courseById(String id) => '$baseUrl/courses/$id';
-
-  // Videos endpoints
-  static const String videos = '$baseUrl/videos';
-  static String videoById(String id) => '$baseUrl/videos/$id';
-
-  // Reports endpoints
-  static const String reportsNotifications = '$baseUrl/reports/notifications';
-  static const String reportsMonthlySummary = '$baseUrl/reports/monthly-summary';
-
-  // Settings endpoints
-  static const String settings = '$baseUrl/settings';
-  static const String settingsNotifications = '$baseUrl/settings/notifications';
-  static const String settingsClearCache = '$baseUrl/settings/clear-cache';
-  static const String settingsChangePassword = '$baseUrl/settings/change-password';
-  static const String settingsVerifyPassword = '$baseUrl/settings/verify-password';
-  static const String settingsDeleteAccount = '$baseUrl/settings/account';
+  static String get attendanceGenerateQr => '$baseUrl/attendance/generate-qr';
+  static String get attendanceActiveQr => '$baseUrl/attendance/active-qr';
+  static String get attendanceGenerateSupervisorQr => '$baseUrl/attendance/generate-supervisor-qr';
+  static String get attendanceScanQr => '$baseUrl/attendance/scan-qr';
+  static String get attendanceScanSupervisorQr => '$baseUrl/attendance/scan-supervisor-qr';
+  static String get attendanceMyRecords => '$baseUrl/attendance/my-records';
+  static String get attendanceToday => '$baseUrl/attendance/today';
+  static String get attendanceAll => '$baseUrl/attendance/all';
 }
+
